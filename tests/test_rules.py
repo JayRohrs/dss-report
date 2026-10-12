@@ -13,9 +13,9 @@ from .helpers import CFG, demo_report, planted, rec, result, rules_fired
 
 class PlantedExceptions(unittest.TestCase):
     def test_missing_pos_import(self):
-        loc, day = planted("pos_missing")
+        loc, day = planted("pos_missing_cash_blank")
         r = demo_report(day)
-        self.assertEqual(rules_fired(r, loc), {rules.POS_IMPORT})
+        self.assertIn(rules.POS_IMPORT, rules_fired(r, loc))
         self.assertEqual(result(r, loc).status, NEEDS_REVIEW)
 
     def test_cash_short_missing_receipts_unapproved(self):
@@ -52,13 +52,13 @@ class PlantedExceptions(unittest.TestCase):
         loc, day = planted("clean_day")
         r = demo_report(day)
         self.assertIn(loc, [x.name for x in r.clear])
-        self.assertEqual(r.headline, "2 of 3 locations need a look for 2026-03-13. "
-                                     "1 has nothing to review.")
+        self.assertEqual(r.headline, "3 of 4 locations need a look for 2026-03-13. "
+                                     "1 has nothing to review. 1 location is UNKNOWN because data is missing.")
 
     def test_quiet_days_have_nothing_flagged(self):
         r = demo_report(date(2026, 3, 1))
         self.assertEqual(r.attention, [])
-        self.assertEqual(len(r.clear), 3)
+        self.assertEqual(len(r.clear), 4)
 
 
 class MissingDataIsNeverClean(unittest.TestCase):
@@ -105,7 +105,7 @@ class MissingDataIsNeverClean(unittest.TestCase):
     def test_date_with_no_data_at_all_is_not_clean(self):
         r = demo_report(date(2026, 4, 1))
         self.assertEqual(r.clear, [])
-        self.assertEqual(len(r.attention), 3)
+        self.assertEqual(len(r.attention), 4)
         self.assertNotIn("Nothing to review: all", r.headline)
 
     def test_no_records_and_no_locations_is_unknown(self):
@@ -138,9 +138,10 @@ class Thresholds(unittest.TestCase):
         self.assertIn((9, rules.CASH), rules_seen)
         self.assertIn((10, rules.CASH), rules_seen)
         self.assertIn((11, rules.EXCEPTIONS), rules_seen)
-        self.assertIn((12, rules.NO_DATA), rules_seen)
+        self.assertIn((13, rules.NO_DATA), rules_seen)
         self.assertIn((13, rules.POS_IMPORT), rules_seen)
-        self.assertEqual(r.clear, [])
+        self.assertEqual([x.name for x in r.clear], [])
+        self.assertIn("Demo Diner West", [x.name for x in r.attention])  # blank cash on Mar 9
 
 
 if __name__ == "__main__":

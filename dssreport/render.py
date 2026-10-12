@@ -24,6 +24,7 @@ h2{font-size:1.3rem;margin:32px 0 12px}
 .headline{font-size:1.35rem;font-weight:700;line-height:1.4;background:var(--card);
 border:2px solid var(--line);border-radius:10px;padding:16px;margin:0 0 12px}
 .summary{margin:0 0 8px}
+.warn{border-left:6px solid var(--unk);background:var(--unkbg);color:var(--fg);padding:10px 14px;margin:0 0 12px;border-radius:6px}
 .note{color:var(--muted);font-size:1rem;margin:0 0 8px}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--line)}
@@ -59,6 +60,11 @@ def render_html(report: Report) -> str:
            f'<h1>{e(report.title)}</h1>',
            f'<p class="date">{e(date_label(report.dates))}</p>',
            f'<p class="headline">{e(report.headline)}</p>']
+    if report.late_note:
+        out.append(f'<p class="warn">{e(report.late_note)}</p>')
+    if report.needs_mapping:
+        out.append('<p class="warn">Not checked (needs mapping): ' + e(", ".join(report.needs_mapping))
+                   + '. These checks were skipped because the data source has no confirmed field for them.</p>')
     if report.summary_sentence:
         out.append(f'<p class="summary">{e(report.summary_sentence)}</p>')
         out.append(f'<p class="note">{e(SOURCE_NOTE[report.summary_source])}</p>')
@@ -97,6 +103,10 @@ def render_text(report: Report) -> str:
                 if report.attention else
                 ("nothing to review" if report.total else "no data (UNKNOWN)")),
              "", wrap(report.headline)]
+    if report.late_note:
+        lines += ["", wrap("LATE: " + report.late_note.removeprefix("Late: "))]
+    if report.needs_mapping:
+        lines += ["", wrap("NOT CHECKED (needs mapping): " + ", ".join(report.needs_mapping) + ".")]
     if report.summary_sentence:
         lines += ["", wrap(report.summary_sentence)]
     lines += ["", "NEEDS A LOOK", "------------"]

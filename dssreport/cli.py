@@ -49,7 +49,8 @@ def _run(args) -> int:
     records = adapter.load()
     for w in adapter.warnings:
         print(f"Warning: {w}", file=sys.stderr)
-    report = build_report(records, cfg, end=args.date, days=args.days, source_name=adapter.name)
+    report = build_report(records, cfg, end=args.date, days=args.days, source_name=adapter.name,
+                          unmapped=frozenset(adapter.unmapped))
     if args.ai or cfg.ai_enabled:
         note = add_summary(report, cfg)
         if note:
