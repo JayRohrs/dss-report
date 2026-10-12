@@ -44,6 +44,8 @@ CSV columns: `location, business_date (YYYY-MM-DD), sales_total, pay_<type> (any
 | `graph.py` | Microsoft 365 sign-in (device code) and draft/send |
 | `settings.py`, `settings_server.py` | the settings screen and `settings.json` |
 | `scheduler.py` | what to do when woken, late label, Windows Task Scheduler XML |
+| `settings_server.py` (view page) | `/report` shows the saved report with "create Microsoft 365 draft" and "open in my mail app" buttons; nothing is emailed until a button is pressed |
+| `state.py` | run memory: last scheduled slot, last report folder, locations seen (used only for the Show/Hide list, never as expected locations) |
 | `summary.py` | optional local-model sentence and the check that discards a wrong one |
 
 ## Tests

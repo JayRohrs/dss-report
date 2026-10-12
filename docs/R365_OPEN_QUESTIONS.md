@@ -18,6 +18,21 @@ Pages consulted (by search summary only):
 - Daily Sales Summary pages: https://docs.restaurant365.com/docs/daily-sales-summary , https://docs.restaurant365.com/docs/daily-sales-review-a-dss , https://docs.restaurant365.com/docs/daily-sales-approve-a-dss
 - Third-party (treat with caution): API Evangelist and Supergood listings for Restaurant365.
 
+## Where your real mapping lives (private, never committed)
+
+`r365_mapping.example.toml` in this repository ships **empty, on purpose**, and the fields are never guessed.
+The real mapping for a real tenant is filled in privately by the owner, in the user-config folder on the
+computer that runs the report:
+
+- Windows: `%LOCALAPPDATA%\DssReport\r365_mapping.toml`
+- (the settings screen shows the exact path and how many items are still empty)
+
+That folder is outside this repository. `r365_mapping.toml`, `settings.json` and `state.json` are also in
+`.gitignore` and a test fails if one appears in the repo. The same goes for the R365 address, user name,
+Microsoft app ID, tenant and email addresses: they are typed into the settings screen on the user's
+computer and are never put in the repo, the docs, the tests or the screenshots (which use obviously fake
+placeholders).
+
 ## What the public documentation appears to say
 
 | Item | What we saw | How the program uses it |
@@ -37,18 +52,18 @@ documentation for that entity, then filling in `r365_mapping.toml`.
 
 1. **Which OData entity holds one row per location per business day with the daily-sales-summary figures?** Not clearly documented. If none exists, this product can only use what R365 does expose and some checks will stay "needs mapping".
 2. **What are the property names** for sales total, payments by type, cash over/short, missing receipts, payment exceptions, location name and business date? Unconfirmed. `r365_mapping.toml` ships empty.
-3. **DSS approval status.** The UI concept (approved / complete) is documented; how it appears in OData (a true/false, a status word, an entity of its own) is not. **The approval check ships switched off** and shows "needs mapping" until the mapping and the words that mean approved / not approved are confirmed. Unrecognised words are shown as UNKNOWN, never guessed.
+3. **DSS approval status.** Catching entries that were not approved is the point of the tool, so the approval check is **on by default**. The UI concept (approved / complete) is documented; how it appears in OData (a true/false, a status word, an entity of its own) is not. Until an approval field is mapped, the report shows "needs mapping" for it and does not run it; the moment a field is mapped it runs, with nothing to switch on. If the property holds words, list which words mean approved and not approved in the mapping; any other word is shown as UNKNOWN, never guessed. (The demo and CSV paths have an approval column, so they show the check working.)
 4. **POS import received.** R365 describes polling/importing sales from the POS. How "the POS import has arrived for that day" can be read through OData is not confirmed.
 5. **"Missing receipts" and "payment exceptions."** The documentation we saw talks about *exception sales tickets* on the DSS; we found no documented DSS concept called "missing receipts". These two counts may not exist in R365 and may need to be renamed or dropped. Until mapped they are skipped.
 6. **Payments add up to sales (optional check).** Needs the sales total and every payment type mapped, and a decision on which payment types count. Ships off, "needs mapping".
 7. **Date filter format** (`2026-03-13` vs `2026-03-13T00:00:00Z`) and **property types.** Set with `date_literal` in the mapping; unconfirmed.
 8. **Query limits.** A third-party review mentions a 31-day cap on sales queries. Unconfirmed; the connector asks for at most 31 days at a time.
 9. **Getting access.** Who in R365 enables the OData connector for a customer, who signs off, and what the agreement says about a third-party program reading the data using the customer's own login. Needs R365 support and a conversation with the customer.
-10. **Locations that return nothing.** A location with no rows can't be seen in the data. The program remembers locations seen on earlier runs and shows a silent one as UNKNOWN; the "Only these locations" setting does the same. The very first run only knows the locations that returned rows.
+10. **Locations that return nothing.** A location that returns no rows at all can't be seen in the data. Decision by the owner: the program does **not** remember earlier locations as expected. A location is shown as UNKNOWN only if the user lists it under "Only these locations" or it returned rows with blank required values. The report says so in its footer. Locations seen on earlier runs are used only to build the Show/Hide list in settings, so a closed restaurant can be switched off.
 
 ## Microsoft 365 (email) - also unconfirmed against a real tenant
 
-11. The sign-in needs an **app registration** in the customer's Microsoft 365 (a public client with "allow public client flows" on). Its ID goes in settings. Not done here.
+11. The sign-in needs an **app registration** in the customer's Microsoft 365 (a public client with "allow public client flows" on). The user enters the app (client) ID, and their own address, in settings or at first sign-in. None is built in or committed. Not done here.
 12. Permissions requested: `Mail.ReadWrite` (create a draft) and, only if "send automatically" is ticked, `Mail.Send`; plus `offline_access` so you don't sign in every day. We believe these are the least that Microsoft documents for creating and sending a message; confirm in the customer's tenant, including whether an administrator must consent.
 13. Conditional-access rules in some tenants block this kind of sign-in.
 

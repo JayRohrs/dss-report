@@ -31,3 +31,12 @@ rules.local.toml
 __pycache__/
 *.pyc
 .venv/
+
+# Private, per-computer files. The real R365 field mapping, settings and run memory belong in the
+# user's own folder (%LOCALAPPDATA%\DssReport), never in this repo. Ignored here as a safety net.
+r365_mapping.toml
+settings.json
+state.json
+task.xml
+run.log
+reports/
