@@ -56,7 +56,7 @@ def validate(s: Settings) -> Settings:
         raise ConfigError("To prepare emails, fill in who they go to.")
     if s.email_send_auto and not s.email_enabled:
         raise ConfigError("'Send automatically' needs 'Prepare an email' to be ticked as well.")
-    if not re.fullmatch(r"[0-9a-fA-F-]{0,64}", s.graph_client_id):
+    if not re.fullmatch(r"[A-Za-z0-9-]{0,64}", s.graph_client_id):
         raise ConfigError("The Microsoft app ID should be letters, digits and dashes only.")
     if not re.fullmatch(r"[A-Za-z0-9.-]{1,100}", s.graph_tenant):
         raise ConfigError("The Microsoft tenant should be 'organizations' or a tenant name/ID.")
