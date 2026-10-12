@@ -412,11 +412,13 @@ class SettingsApp:
         used = len(s.enabled_instances)
         out = ['<fieldset><legend>1. Licence</legend>',
                f'<p class="state">{e(status.message)}</p>']
+        if status.notice:
+            out.append(f'<p class="msg bad">{e(status.notice)}</p>')
         rows = []
         if status.licence:
             L = status.licence
             rows = [("Customer", L.customer),
-                    ("Connections", f"{used} used of {L.instances} allowed" + (" (over the limit)" if used > L.instances else "")),
+                    ("Connections", status.connections_text(used)),
                     ("Licence ends", L.expires.isoformat()), ("Updates until", L.updates_until.isoformat()),
                     ("This version", f"released {__release_date__}, " + (
                         "inside your updates period" if status.updates_covered(date.fromisoformat(__release_date__))
@@ -525,6 +527,8 @@ class SettingsApp:
             out.append(f'<p class="msg bad">{e(problem)}</p>')
         if store_note:
             out.append(f'<p class="msg bad">{e(store_note)}</p>')
+        if status.notice:
+            out.append(f'<p class="msg bad">{e(status.notice)}</p>')
         out += self._licence_html(status, s, token)
         out.append(f'<form method="post" action="/"><input type="hidden" name="t" value="{e(token)}">')
 

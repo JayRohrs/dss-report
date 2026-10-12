@@ -68,8 +68,8 @@ def render_html(report) -> str:
            f'<p class="headline">{e(report.headline)}</p>']
     if report.late_note:
         out.append(f'<p class="warn">{e(report.late_note)}</p>')
-    if report.licence_problem:
-        out.append(f'<p class="warn">{e(report.licence_line)}</p>')
+    if report.licence_notice or report.licence_problem:
+        out.append(f'<p class="warn">{e(report.licence_notice or report.licence_line)}</p>')
     if report.needs_mapping:
         out.append('<p class="warn">Not checked (needs mapping): ' + e(", ".join(report.needs_mapping))
                    + '. These checks were skipped because the data source has no confirmed field for them.</p>')
@@ -100,7 +100,7 @@ def render_html(report) -> str:
                + "".join(f"<li>{e(t)}</li>" for t in report.rules_note) + '</ul>')
     if report.scope_note:
         out.append(f'<p>{e(report.scope_note)}</p>')
-    if report.licence_line and not report.licence_problem:
+    if report.licence_line and (not report.licence_problem or report.licence_notice):
         out.append(f'<p>{e(report.licence_line)}</p>')
     out.append(f'<p>Data source: {e(report.source_name)}. Made by a computer program from the '
                'figures above, not from anyone\'s judgement. Nothing was sent anywhere.</p></footer>')
@@ -119,8 +119,8 @@ def render_text(report) -> str:
              "", wrap(report.headline)]
     if report.late_note:
         lines += ["", wrap("LATE: " + report.late_note.removeprefix("Late: "))]
-    if report.licence_problem:
-        lines += ["", wrap(report.licence_line)]
+    if report.licence_notice or report.licence_problem:
+        lines += ["", wrap(report.licence_notice or report.licence_line)]
     if report.needs_mapping:
         lines += ["", wrap("NOT CHECKED (needs mapping): " + ", ".join(report.needs_mapping) + ".")]
     if report.summary_sentence:
@@ -137,7 +137,7 @@ def render_text(report) -> str:
     lines += ["", "How this was decided:"] + [wrap(t, "  - ") for t in report.rules_note]
     if report.scope_note:
         lines += ["", wrap(report.scope_note)]
-    if report.licence_line and not report.licence_problem:
+    if report.licence_line and (not report.licence_problem or report.licence_notice):
         lines += ["", wrap(report.licence_line)]
     lines += ["", f"Data source: {report.source_name}. Made by a computer program; nothing was sent anywhere."]
     return "\n".join(lines) + "\n"
@@ -175,8 +175,8 @@ def _render_multi_html(m: MultiReport) -> str:
            f'<p class="headline">{e(m.headline)}</p>']
     if m.late_note:
         out.append(f'<p class="warn">{e(m.late_note)}</p>')
-    if m.licence_problem:
-        out.append(f'<p class="warn">{e(m.licence_line)}</p>')
+    if m.licence_notice or m.licence_problem:
+        out.append(f'<p class="warn">{e(m.licence_notice or m.licence_line)}</p>')
     for s in m.failed_sections:           # a connection that failed is never hidden, and comes first
         out.append(f'<p class="down">{e(s.name)}: {e(s.error)}</p>')
     if m.needs_mapping:
@@ -192,7 +192,7 @@ def _render_multi_html(m: MultiReport) -> str:
             out.append(f'<p class="note">{e(s.report.scope_note)}</p>')
     out.append('<footer><p>How this was decided (edit rules.toml to change):</p><ul>'
                + "".join(f"<li>{e(t)}</li>" for t in m.rules_note) + '</ul>')
-    if m.licence_line and not m.licence_problem:
+    if m.licence_line and (not m.licence_problem or m.licence_notice):
         out.append(f'<p>{e(m.licence_line)}</p>')
     out.append(f'<p>Data source: {e(m.source_name)}. Made by a computer program from the '
                'figures above, not from anyone\'s judgement. Nothing was sent anywhere.</p></footer>')
@@ -221,8 +221,8 @@ def _render_multi_text(m: MultiReport) -> str:
     lines = [f"Subject: {multi_subject(m)}", "", wrap(m.headline)]
     if m.late_note:
         lines += ["", wrap("LATE: " + m.late_note.removeprefix("Late: "))]
-    if m.licence_problem:
-        lines += ["", wrap(m.licence_line)]
+    if m.licence_notice or m.licence_problem:
+        lines += ["", wrap(m.licence_notice or m.licence_line)]
     for s in m.failed_sections:
         lines += ["", wrap(f"{s.name.upper()}: {s.error}")]
     if m.needs_mapping:
@@ -241,7 +241,7 @@ def _render_multi_text(m: MultiReport) -> str:
         lines += ["", "NOTHING TO REVIEW", "-----------------"]
         lines += [f"* {x.name}" for x in r.clear] or ["None."]
     lines += ["", "How this was decided:"] + [wrap(t, "  - ") for t in m.rules_note]
-    if m.licence_line and not m.licence_problem:
+    if m.licence_line and (not m.licence_problem or m.licence_notice):
         lines += ["", wrap(m.licence_line)]
     lines += ["", f"Data source: {m.source_name}. Made by a computer program; nothing was sent anywhere."]
     return "\n".join(lines) + "\n"

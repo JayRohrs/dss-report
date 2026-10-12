@@ -291,7 +291,7 @@ class FeatureFlags(Env):
     def test_every_current_feature_is_in_the_base_licence_and_future_ones_are_not(self):
         with H.trusted_keys():
             lic = L.verify_licence(H.make())
-        self.assertEqual(lic.features, frozenset(L.BASE_FEATURES))
+        self.assertEqual(lic.features, frozenset(L.CURRENT_FEATURES))
         self.assertNotIn(L.F_HOSTED, lic.features)
 
 
@@ -395,3 +395,78 @@ class LegacySingleConnection(Env):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RenewalNoticeInReports(Env):
+    def test_notice_is_at_the_top_of_the_report_and_the_email_from_30_days_out(self):
+        from datetime import timedelta
+        self.licence(instances=1, expires=date.today() + timedelta(days=9))
+        with MockR365() as a:
+            self.add("Sample Group A", a.url)
+            res = self.do_run()
+        html, text = res.html_path.read_text(), res.text_path.read_text()
+        note = "Licence expires in 9 days"
+        self.assertIn(note, html)
+        self.assertIn(note, text)
+        self.assertLess(html.index(note), html.index("Needs a look"))
+        self.assertLess(text.index(note), text.index("NEEDS A LOOK"))
+
+    def test_no_notice_far_from_expiry(self):
+        from datetime import timedelta
+        self.licence(instances=1, expires=date.today() + timedelta(days=90))
+        with MockR365() as a:
+            self.add("Sample Group A", a.url)
+            res = self.do_run()
+        self.assertNotIn("Licence expires in", res.html_path.read_text())
+
+    def test_expired_notice_is_at_the_top_and_the_report_is_still_made_in_full(self):
+        self.licence(instances=1, expires=date(2020, 1, 1))
+        with MockR365() as a:
+            self.add("Sample Group A", a.url)
+            res = self.do_run()
+        note = "Licence expired on 2020-01-01 — renew to add connections or get updates."
+        html, text = res.html_path.read_text(), res.text_path.read_text()
+        self.assertIn(note, html)
+        self.assertLess(html.index(note), html.index("Needs a look"))
+        self.assertIn(note, text)
+        self.assertEqual(len(res.report.attention), 2)                  # nothing about the report was cut
+
+    def test_notice_also_tops_a_two_connection_report(self):
+        from datetime import timedelta
+        self.licence(instances=2, expires=date.today() + timedelta(days=5))
+        with MockR365() as a, MockR365(rows_override=alt_rows()) as b:
+            self.add("Sample Group A", a.url)
+            self.add("Sample Group B", b.url)
+            res = self.do_run()
+        html = res.html_path.read_text()
+        self.assertLess(html.index("Licence expires in 5 days"), html.index("Sample Group A</h2>"))
+
+
+class UnlimitedAtRunTime(Env):
+    def test_unlimited_connects_every_configured_connection(self):
+        self.licence(instances="unlimited")
+        servers = [MockR365(rows_override=alt_rows()) for _ in range(3)]
+        try:
+            for s in servers:
+                s.thread.start()
+            for i, s in enumerate(servers):
+                self.add(f"Sample Group {i}", s.url)
+            res = self.do_run()
+        finally:
+            for s in servers:
+                s.shutdown()
+                s.server_close()
+        self.assertEqual(len(res.report.ok_sections), 3)
+        self.assertEqual(res.report.failed_sections, [])
+
+    def test_terms_change_with_the_file_alone(self):
+        """Same program, different licence file: connections and flags change, nothing else does."""
+        with MockR365() as a, MockR365(rows_override=alt_rows()) as b:
+            self.add("Sample Group A", a.url)
+            self.add("Sample Group B", b.url)
+            self.licence(instances=1, features=[])
+            one = self.do_run()
+            self.licence(instances="unlimited", features=["optional_rules"])
+            many = self.do_run()
+        self.assertEqual(len(one.report.ok_sections), 1)
+        self.assertEqual(len(many.report.ok_sections), 2)

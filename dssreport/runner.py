@@ -69,6 +69,7 @@ def run_report(input_spec: str, out_dir, end: Optional[date] = None, days: int =
     report.late_note = late_note
     report.licence_line = status.message
     report.licence_problem = status.state not in (lic.OK, lic.DEMO)
+    report.licence_notice = status.notice
     if ai or cfg.ai_enabled:
         _add_summary(report, cfg, status, notes)
     out = Path(out_dir)

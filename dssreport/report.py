@@ -46,6 +46,7 @@ class Report:
     scope_note: str = ""
     licence_line: str = ""
     licence_problem: bool = False
+    licence_notice: str = ""
 
     @property
     def total(self) -> int:
@@ -187,6 +188,7 @@ class MultiReport:
     late_note: str = ""
     licence_line: str = ""
     licence_problem: bool = False
+    licence_notice: str = ""
     summary_sentence: str = ""
     summary_source: str = ""
     scope_note: str = ""

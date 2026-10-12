@@ -571,3 +571,40 @@ class VersionVsUpdates(Base):
         self.upload_licence(H.make(updates_until=date(2020, 1, 1)))
         _, html = self.get()
         self.assertIn("newer than your updates period (it still runs", html)
+
+
+class RenewalAndUnlimitedInSettings(Base):
+    def test_reminder_appears_at_30_days_and_not_before(self):
+        from datetime import timedelta
+        today = date.today()
+        self.upload_licence(H.make(expires=today + timedelta(days=31)))
+        _, html = self.get()
+        self.assertNotIn("Licence expires in", html)
+        self.upload_licence(H.make(expires=today + timedelta(days=12)))
+        _, html = self.get()
+        self.assertIn("Licence expires in 12 days", html)
+        self.assertGreaterEqual(html.count("Licence expires in 12 days"), 2)      # top of page and in the section
+
+    def test_expired_notice_uses_the_agreed_wording_and_blocks_nothing(self):
+        self.add_instance()
+        self.upload_licence(H.make(expires=date(2020, 1, 1)))
+        _, html = self.get()
+        self.assertIn("Licence expired on 2020-01-01 — renew to add connections or get updates.", html)
+        self.assertEqual(self.get(f"/report?t={self.server.token}")[0], 200)       # reports still open
+        _, saved = self.post(form_for(load_settings().instances, action="save"))
+        self.assertIn("Settings saved.", saved)                                    # settings still save
+
+    def test_unlimited_is_shown_plainly_and_lets_connections_be_added(self):
+        self.upload_licence(H.make(instances="unlimited"))
+        a = self.add_instance("Sample Group A")
+        _, html = self.get()
+        self.assertIn("unlimited (1 in use)", html)
+        self.assertNotIn("allowed", html.split("<legend>1. Licence</legend>")[1].split("</fieldset>")[0].split("Connections")[1][:60])
+        existing = [a]
+        for n in "BCDE":
+            _, page = self.post(form_for(load_settings().instances, action="save", new_name=f"Sample Group {n}",
+                                         new_url="https://odata.example.com/x", new_user=USER))
+            self.assertIn(f"Connection 'Sample Group {n}' added", page)
+        self.assertEqual(len(load_settings().instances), 5)
+        _, html = self.get()
+        self.assertIn("unlimited (5 in use)", html)

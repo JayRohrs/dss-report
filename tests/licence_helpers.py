@@ -22,7 +22,7 @@ OTHER_SECRET = os.urandom(32)                 # a different signer ("wrong key")
 
 
 def make(customer="Sample Customer Ltd", instances=2, expires=date(2099, 12, 31),
-         updates_until=date(2099, 12, 31), features=licence_tool.BASE_FEATURES, secret=None, kid=KID,
+         updates_until=date(2099, 12, 31), features=licence_tool.CURRENT_FEATURES, secret=None, kid=KID,
          issued=date(2026, 1, 1)) -> bytes:
     return licence_tool.make_licence(secret or SECRET, kid, customer, instances, expires, updates_until,
                                      features, issued)

@@ -14,6 +14,7 @@ What a lapsed or missing licence does (see docs/LICENSING.md): it never hides or
 
 import base64
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -25,6 +26,8 @@ from .licence_keys import PUBLIC_KEYS
 from .paths import app_dir
 
 MAX_BYTES = 16 * 1024
+#: how many days before the end the renewal reminder starts
+RENEWAL_NOTICE_DAYS = 30
 
 # ---- feature flags: the one list. A licence file lists the flags it grants.
 F_OPTIONAL_RULES = "optional_rules"     # the optional checks (payments add up to sales)
@@ -34,9 +37,10 @@ F_LOCAL_AI = "local_ai"                 # the optional one-sentence summary from
 F_HOSTED = "hosted"                     # future: hosted features (nothing built yet)
 F_ADDONS = "addons"                     # future: paid add-ons (nothing built yet)
 
-#: Everything built so far. A base licence grants all of these.
-BASE_FEATURES = (F_OPTIONAL_RULES, F_EMAIL, F_SCHEDULE, F_LOCAL_AI)
-ALL_FEATURES = BASE_FEATURES + (F_HOSTED, F_ADDONS)
+#: The flags for everything built so far. What a customer actually gets is whatever their licence FILE
+#: lists: connections and flags are driven entirely by the file, so terms can change without a code change.
+CURRENT_FEATURES = (F_OPTIONAL_RULES, F_EMAIL, F_SCHEDULE, F_LOCAL_AI)
+ALL_FEATURES = CURRENT_FEATURES + (F_HOSTED, F_ADDONS)
 
 FEATURE_WORDS = {
     F_OPTIONAL_RULES: "Optional checks",
@@ -46,6 +50,9 @@ FEATURE_WORDS = {
     F_HOSTED: "Hosted features (not built yet)",
     F_ADDONS: "Paid add-ons (not built yet)",
 }
+
+#: the explicit value a licence file uses for "no limit on connections"
+UNLIMITED = "unlimited"
 
 # states
 OK, EXPIRED, NOT_FOUND, INVALID, DEMO = "ok", "expired", "not found", "invalid", "demo"
@@ -62,12 +69,16 @@ class FeatureNotLicensed(DssError):
 @dataclass
 class Licence:
     customer: str
-    instances: int
+    instances: Optional[int]        # None = "unlimited" (an explicit value in the licence file)
     expires: date
     updates_until: date
     features: FrozenSet[str]
     issued: Optional[date] = None
     licence_id: str = ""
+
+    @property
+    def unlimited(self) -> bool:
+        return self.instances is None
 
 
 @dataclass
@@ -79,10 +90,42 @@ class LicenceStatus:
 
     # -- what the licence lets the program do ------------------------------------------------
     @property
-    def instances_allowed(self) -> int:
-        """How many R365 connections may run. A lapsed (expired) licence keeps the connections already
-        set up working; a missing or invalid one allows none. Demo data never needs a connection."""
-        return self.licence.instances if self.licence and self.state in (OK, EXPIRED) else 0
+    def instances_allowed(self):
+        """How many R365 connections may run (math.inf if the licence says unlimited). A lapsed (expired)
+        licence keeps the connections already set up working; a missing or invalid one allows none.
+        Demo data never needs a connection."""
+        if not (self.licence and self.state in (OK, EXPIRED)):
+            return 0
+        return math.inf if self.licence.unlimited else self.licence.instances
+
+    def connections_text(self, in_use: int) -> str:
+        """Plain words for the settings screen: "unlimited (2 in use)" or "2 used of 3 allowed"."""
+        allowed = self.instances_allowed
+        if allowed == math.inf:
+            return f"unlimited ({in_use} in use)"
+        text = f"{in_use} used of {allowed} allowed"
+        return text + (" (over the limit)" if in_use > allowed else "")
+
+    @property
+    def days_left(self) -> Optional[int]:
+        if not self.licence or self.today is None:
+            return None
+        return (self.licence.expires - self.today).days
+
+    @property
+    def notice(self) -> str:
+        """A renewal reminder, or "" if none is due. Shown in settings and at the top of the report from
+        30 days before the end, and after it. It is only ever a notice: it blocks nothing."""
+        if self.state == EXPIRED:
+            return (f"Licence expired on {self.licence.expires.isoformat()} — "
+                    "renew to add connections or get updates.")
+        if self.state == OK:
+            days = self.days_left
+            if days is not None and days <= RENEWAL_NOTICE_DAYS:
+                when = "today" if days <= 0 else f"in {days} day{'' if days == 1 else 's'}"
+                return (f"Licence expires {when} (on {self.licence.expires.isoformat()}). "
+                        "Renew to keep adding connections and getting updates.")
+        return ""
 
     def can_add_connection(self, in_use: int) -> Optional[str]:
         """None if one more connection may be added, otherwise the plain reason it may not."""
@@ -90,9 +133,10 @@ class LicenceStatus:
             return f"{self.message} A renewed licence is needed to add a connection."
         if self.state != OK:
             return f"{self.message} Load a licence file in settings first."
-        if in_use >= self.licence.instances:
-            return (f"Licence: over limit. Your licence allows {self.licence.instances} connection"
-                    f"{'' if self.licence.instances == 1 else 's'} and {in_use} "
+        allowed = self.instances_allowed
+        if in_use >= allowed:
+            return (f"Licence: over limit. Your licence allows {allowed} connection"
+                    f"{'' if allowed == 1 else 's'} and {in_use} "
                     f"{'is' if in_use == 1 else 'are'} already set up.")
         return None
 
@@ -100,7 +144,7 @@ class LicenceStatus:
         if feature not in ALL_FEATURES:
             raise ValueError(f"unknown feature flag: {feature}")
         if self.state == DEMO:
-            return feature in BASE_FEATURES          # demo data is never blocked
+            return feature in CURRENT_FEATURES       # demo data is never blocked
         return bool(self.licence) and self.state in (OK, EXPIRED) and feature in self.licence.features
 
     def require(self, feature: str) -> None:
@@ -172,14 +216,15 @@ def verify_licence(raw: bytes, public_keys: Optional[Dict[str, str]] = None) -> 
         features = p["features"]
         if not isinstance(p["customer"], str) or not p["customer"].strip():
             raise ValueError
-        if isinstance(p["instances"], bool) or not isinstance(p["instances"], int) or p["instances"] < 0:
+        n = p["instances"]
+        if n != UNLIMITED and (isinstance(n, bool) or not isinstance(n, int) or n < 0):
             raise ValueError
         if not isinstance(features, list) or not all(isinstance(f, str) for f in features):
             raise ValueError
     except (KeyError, ValueError, TypeError, UnicodeDecodeError):
         raise LicenceError("The licence file is damaged (its details are incomplete).")
     return Licence(
-        customer=p["customer"].strip(), instances=p["instances"],
+        customer=p["customer"].strip(), instances=None if p["instances"] == UNLIMITED else p["instances"],
         expires=_date(p["expires"], "the expiry"), updates_until=_date(p["updates_until"], "the updates date"),
         features=frozenset(f for f in features if f in ALL_FEATURES),     # unknown flags are ignored
         issued=_date(p["issued"], "the issue date") if p.get("issued") else None,
