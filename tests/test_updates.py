@@ -301,3 +301,24 @@ class CommandLine(Env):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LifetimeEntitlement(Env):
+    def lifetime(self, **kw):
+        return L.status_for(L.Licence("Sample Customer Ltd", 1, kw.get("expires", date(2099, 1, 1)), None,
+                                      frozenset(L.CURRENT_FEATURES), licence_id="lic-aaa111"), TODAY)
+
+    def test_a_lifetime_licence_takes_any_update_whatever_its_release_date(self):
+        self.apply(self.build(release=date(2090, 1, 1)), self.lifetime())
+        self.assertEqual(self.tree(), NEW)
+
+    def test_lifetime_still_respects_the_owner_s_other_controls(self):
+        with self.assertRaises(updates.UpdateError) as cm:
+            self.apply(self.build(licence_ids=["someone-else"]), self.lifetime())
+        self.assertIn("not been released to your licence", str(cm.exception))
+        with self.assertRaises(updates.UpdateError):
+            self.apply(self.build(min_version="0.3.5"), self.lifetime())
+
+    def test_dated_behaviour_is_unchanged(self):
+        with self.assertRaises(updates.UpdateError):
+            self.apply(self.build(release=date(2026, 10, 1)), status(updates_until=date(2026, 9, 30)))

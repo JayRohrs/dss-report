@@ -5,7 +5,7 @@ dssreport folder). Run it on Jay's own machine.
     python tools/licence_tool.py keygen --out <PRIVATE folder outside every git folder> [--kid 2026-a]
         (asks for a passphrase; the private key file is saved passphrase-protected)
     python tools/licence_tool.py sign --private-key <file> --kid 2026-a --customer "Name" \\
-        --instances 2|unlimited --expires 2027-03-31 --updates-until 2027-03-31 [--features a,b] --out licence.json
+        --instances 2|unlimited --expires 2027-03-31 --updates-until 2027-03-31|lifetime [--features a,b] --out licence.json
     python tools/licence_tool.py show licence.json
 
 The PRIVATE key never goes in the repo. This tool refuses to write a private key inside a git working
@@ -31,7 +31,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 
 import ed25519_sign  # noqa: E402
-from dssreport.licence import ALL_FEATURES, CURRENT_FEATURES, UNLIMITED  # noqa: E402
+from dssreport.licence import ALL_FEATURES, CURRENT_FEATURES, LIFETIME, UNLIMITED  # noqa: E402
 
 
 def b64(data: bytes) -> str:
@@ -45,11 +45,11 @@ def inside_git_repo(path: Path) -> bool:
     return False
 
 
-def make_licence(secret: bytes, kid: str, customer: str, instances, expires: date, updates_until: date,
+def make_licence(secret: bytes, kid: str, customer: str, instances, expires: date, updates_until,
                  features=CURRENT_FEATURES, issued: date = None) -> bytes:
     # instances: a whole number, or the word "unlimited"
     payload = {"customer": customer, "instances": instances, "expires": expires.isoformat(),
-               "updates_until": updates_until.isoformat(), "features": sorted(features),
+               "updates_until": updates_until if updates_until == LIFETIME else updates_until.isoformat(), "features": sorted(features),
                "issued": (issued or date.today()).isoformat(), "licence_id": secrets.token_hex(6)}
     payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     doc = {"v": 1, "kid": kid, "payload": b64(payload_bytes), "signature": b64(ed25519_sign.sign(secret, payload_bytes))}
@@ -135,6 +135,15 @@ def _instances(text: str):
     return n
 
 
+def _updates_until(text: str):
+    if text.strip().lower() == LIFETIME:
+        return LIFETIME
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError('use a date like 2027-03-31, or "lifetime"')
+
+
 def _ask_passphrase(confirm: bool) -> str:
     first = getpass.getpass("Passphrase for the private key file: ")
     if confirm and getpass.getpass("Type it again: ") != first:
@@ -155,7 +164,8 @@ def main(argv=None, passphrase: str = None) -> int:
     s.add_argument("--instances", type=_instances, required=True,
                    help='how many R365 connections: a whole number, or the word "unlimited"')
     s.add_argument("--expires", type=date.fromisoformat, required=True)
-    s.add_argument("--updates-until", type=date.fromisoformat, required=True)
+    s.add_argument("--updates-until", type=_updates_until, required=True,
+                   help='the last date updates are included (YYYY-MM-DD), or the word "lifetime"')
     s.add_argument("--features", default=",".join(CURRENT_FEATURES), help=f"comma list from: {', '.join(ALL_FEATURES)}")
     s.add_argument("--out", required=True)
     sh = sub.add_parser("show")

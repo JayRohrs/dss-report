@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from datetime import date
 
-from . import __release_date__, __version__, paths, scheduler, updates
+from . import __release_date__, __version__, paths, scheduler, update_check, updates
 from .config import Config, dump_rules, parse_config
 from .credstore import CredentialStore, CredentialStoreError, default_store, redact
 from .errors import DssError
@@ -133,6 +133,7 @@ class SettingsApp:
         self.rules_path = paths.resolve_rules_path(rules_path)
         self.graph_factory = graph_factory or (lambda st: GraphClient(st))
         self.device = None
+        self.available = []          # versions listed by the last "Check for updates now" (this session only)
 
     @property
     def store(self) -> CredentialStore:
@@ -297,6 +298,44 @@ class SettingsApp:
         finally:
             tmp.unlink(missing_ok=True)
 
+    def updates_action(self, f: dict) -> list:
+        """The optional online update check. Every step is one explicit click; nothing runs by itself."""
+        g = lambda k, d="": f.get(k, [d])[0].strip()
+        action = g("action", "save")
+        s = load_settings()
+        s.update_check_enabled = "update_check_enabled" in f
+        s.update_manifest_url = g("update_manifest_url")
+        save_settings(s)                                          # validates the address
+        status = lic.current_status()
+        if action == "save":
+            return ["Update settings saved." + ("" if s.update_check_enabled else " Online checking is off.")]
+        if action == "check":
+            if not s.update_check_enabled:
+                raise DssError("Online update checking is switched off. Tick the box and press Save first.")
+            self.available = update_check.check(s.update_manifest_url, __version__)
+            if not self.available:
+                return ["You have the newest version that is listed."]
+            return [f"{len(self.available)} newer version{'' if len(self.available) == 1 else 's'} listed. "
+                    "Nothing has been downloaded."]
+        if action.startswith("download:"):
+            if not s.update_check_enabled:
+                raise DssError("Online update checking is switched off.")
+            entry = next((a for a in self.available if a.file == action.split(":", 1)[1]), None)
+            if entry is None:
+                raise DssError("Press 'Check for updates now' first.")
+            update_check.download(s.update_manifest_url, entry, status)
+            return [f"Version {entry.version} was downloaded and checked. It is NOT installed yet; press Install when you are ready."]
+        if action.startswith("install:"):
+            name = action.split(":", 1)[1]
+            path = next((p for p in update_check.downloaded_files() if p.name == name), None)
+            if path is None:
+                raise DssError("That downloaded update file was not found.")
+            msg = updates.apply_update(path, status, self.program_dir)
+            path.unlink(missing_ok=True)
+            self.available = []
+            return [msg]
+        return []
+
     def rollback_update(self) -> str:
         return updates.rollback(self.program_dir)
 
@@ -434,7 +473,7 @@ class SettingsApp:
             L = status.licence
             rows = [("Customer", L.customer),
                     ("Connections", status.connections_text(used)),
-                    ("Licence ends", L.expires.isoformat()), ("Updates until", L.updates_until.isoformat()),
+                    ("Licence ends", L.expires.isoformat()), ("Updates", "lifetime" if L.updates_lifetime else f"until {L.updates_until.isoformat()}"),
                     ("This version", f"released {__release_date__}, " + (
                         "inside your updates period" if status.updates_covered(date.fromisoformat(__release_date__))
                         else "newer than your updates period (it still runs; ask about renewing)")),
@@ -442,7 +481,7 @@ class SettingsApp:
         else:
             rows = [("Connections", f"{used} set up, {status.instances_allowed} allowed")]
         out.append('<table class="facts">' + "".join(
-            f'<tr><th scope="row">{e(a)}</th><td>{e(b)}</td></tr>' for a, b in rows) + '</table>')
+            f'<tr><th scope="row">{e(a)}:</th><td>{e(b)}</td></tr>' for a, b in rows) + '</table>')
         out.append('<p class="hint">Demo data always works without a licence. A licence that has run out or is missing '
                    'never hides or deletes a report you already have; it only stops new connections and extras.</p>')
         out.append(f'<form method="post" action="/licence" enctype="multipart/form-data">'
@@ -454,24 +493,55 @@ class SettingsApp:
                    '<button type="submit">Load licence file</button></form></fieldset>')
         return out
 
+    def _online_updates_html(self, status, token: str) -> list:
+        e = escape
+        s = load_settings()
+        out = [f'<form method="post" action="/updates"><input type="hidden" name="t" value="{e(token)}">',
+               '<h3>Check for updates online (optional)</h3>']
+        out.append(_checkbox("update_check_enabled", s.update_check_enabled, "Allow checking for updates online",
+                             "Off by default. When ticked, pressing Check makes one plain request to the address below. "
+                             "Nothing about you, your licence or this computer is sent. Nothing downloads or installs unless you press the buttons."))
+        out.append(_field("update_manifest_url", s.update_manifest_url, "Update list address",
+                          "The address of the signed update list that Jay Rohrs gave you. It must start with https://.",
+                          placeholder="https://updates.example.invalid/dss-report/manifest.json"))
+        out.append('<button type="submit" name="action" value="save">Save update settings</button>'
+                   '<button type="submit" name="action" value="check">Check for updates now</button>')
+        for a in self.available:
+            covered = status.updates_covered(a.release_date)
+            line = f"Version {a.version} (released {a.release_date.isoformat()})" + (f" - {a.notes}" if a.notes else "")
+            out.append(f'<div class="row"><strong>{e(line)}</strong>')
+            if covered is False:
+                out.append('<p class="hint">Released after your updates period ended. Renew to get it. '
+                           'Your current version keeps working.</p>')
+            else:
+                out.append(f'<button type="submit" name="action" value="download:{e(a.file)}">Download version {e(a.version)}</button>')
+            out.append('</div>')
+        for p in update_check.downloaded_files():
+            out.append(f'<div class="row"><strong>Downloaded and checked: {e(p.name)}</strong>'
+                       f'<button type="submit" name="action" value="install:{e(p.name)}">Install</button></div>')
+        out.append('</form>')
+        return out
+
     def _updates_html(self, status, token: str) -> list:
         e = escape
-        until = status.licence.updates_until.isoformat() if status.licence else "no licence loaded"
+        until = status.licence.updates_text() if status.licence else "no licence loaded"
         rows = [("Installed version", f"{__version__} (released {__release_date__})"),
-                ("Updates included until", until),
+                ("Updates", until),
                 ("Earlier version saved", "yes, you can go back to it" if updates.has_backup() else "no")]
         out = ['<fieldset><legend>2. Updates</legend>',
-               '<table class="facts">' + "".join(f'<tr><th scope="row">{e(a)}</th><td>{e(b)}</td></tr>' for a, b in rows) + '</table>',
-               '<p class="hint">Updates reach you only when Jay Rohrs sends you an update file. This program never goes '
-               'online to look for one. The file is checked on this computer (it must be signed by Jay Rohrs and '
-               'inside your updates period) and only the program files are replaced. Your settings, saved passwords, '
-               'licence and reports are never touched.</p>',
+               '<table class="facts">' + "".join(f'<tr><th scope="row">{e(a)}:</th><td>{e(b)}</td></tr>' for a, b in rows) + '</table>',
+               '<p class="hint">Updates are released by Jay Rohrs. This program never goes online for updates unless '
+               'you switch on the optional check below. Every update, whether sent as a file or downloaded, is checked '
+               'on this computer (it must be signed by Jay Rohrs and inside your updates period) and nothing installs '
+               'until you press Install. Only the program files are replaced; your settings, saved passwords, licence '
+               'and reports are never touched.</p>',
                f'<form method="post" action="/update" enctype="multipart/form-data">'
                f'<input type="hidden" name="t" value="{e(token)}">'
                '<div class="row"><label for="update_file">Update file</label>'
                '<input type="file" id="update_file" name="update" accept=".dssupdate,.zip">'
                '<p class="hint">Choose the update file you were sent, then close and reopen this program afterwards.</p></div>'
                '<button type="submit">Install update file</button></form>']
+        out += self._online_updates_html(status, token)
         if updates.has_backup():
             out.append(f'<form method="post" action="/rollback"><input type="hidden" name="t" value="{e(token)}">'
                        '<button type="submit">Go back to the previous version</button></form>')
@@ -708,6 +778,15 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.touch()
             return self._send(200, app.render(self.server.token, messages, problem))
         form = parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True)
+        if self.path == "/updates":
+            if not self._ok_request(form.get("t", [""])[0]):
+                return self._send(403, "<p>This page can only be used from the program.</p>")
+            try:
+                messages += app.updates_action(form)
+            except DssError as exc:
+                problem = str(exc)
+            self.server.touch()
+            return self._send(200, app.render(self.server.token, messages, problem))
         if self.path == "/rollback":
             if not self._ok_request(form.get("t", [""])[0]):
                 return self._send(403, "<p>This page can only be used from the program.</p>")

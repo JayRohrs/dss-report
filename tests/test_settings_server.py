@@ -419,7 +419,7 @@ class LicenceSection(Base):
         _, html = self.get()
         self.assertIn("Licence: valid for Sample Customer Ltd until 2099-12-31.", html)
         self.assertIn("1 used of 2 allowed", html)
-        self.assertIn("Updates until", html)
+        self.assertIn("<th scope=\"row\">Updates:</th><td>until 2099-12-31</td>", html)
         self.assertIn("Email through Microsoft 365", html)
         self.assertIn("nothing is sent anywhere", html)
         self.assertIn('name="licence"', html)
@@ -695,3 +695,110 @@ class UpdatesSection(Base):
         self.upload(self.package())
         self.assertEqual((self.home / "licence.json").read_bytes(), before)
         self.assertEqual((self.home / "settings.json").read_bytes(), settings_before)
+
+
+class OnlineUpdates(Base):
+    def setUp(self):
+        super().setUp()
+        from . import test_update_check as C
+        from . import test_updates as U
+        self.C, self.U = C, U
+        self.pdir = Path(tempfile.mkdtemp())
+        for rel, data in U.OLD.items():
+            (self.pdir / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.pdir / rel).write_bytes(data)
+        self.app.program_dir = self.pdir
+        k = U.update_keys()
+        k.__enter__()
+        self.addCleanup(lambda: k.__exit__(None, None, None))
+        self.host = C.MockStaticHost()
+        self.host.__enter__()
+        self.addCleanup(lambda: self.host.__exit__(None, None, None))
+        self.pkgs = Path(tempfile.mkdtemp())
+        out = self.pkgs / "dss-update-9.9.0.dssupdate"
+        U.update_tool.build_update(U.USECRET, U.UKID, U.NEW, "9.9.0", date(2026, 10, 1), out, notes="Sample notes")
+        self.host.files["/dss/dss-update-9.9.0.dssupdate"] = out.read_bytes()
+        m = self.pkgs / "manifest.json"
+        U.update_tool.write_manifest(U.USECRET, U.UKID, self.pkgs, m)
+        self.host.files["/dss/manifest.json"] = m.read_bytes()
+        self.url = self.host.base + "/manifest.json"
+
+    def up(self, **f):
+        return self.post(f, path="/updates")
+
+    def test_off_by_default_and_checking_while_off_makes_no_request(self):
+        _, html = self.get()
+        self.assertRegex(html, r'name="update_check_enabled" value="1"(?! checked)')
+        self.assertIn('placeholder="https://updates.example.invalid/dss-report/manifest.json"', html)
+        self.assertNotRegex(html, r'name="update_manifest_url" value="[^"]')
+        _, html = self.up(action="check", update_manifest_url=self.url)
+        self.assertIn("Online update checking is switched off", html)
+        self.assertEqual(self.host.requests, [])
+
+    def test_saving_the_setting_alone_makes_no_request(self):
+        _, html = self.up(action="save", update_check_enabled="1", update_manifest_url=self.url)
+        self.assertIn("Update settings saved.", html)
+        self.assertEqual(self.host.requests, [])
+        s = load_settings()
+        self.assertEqual((s.update_check_enabled, s.update_manifest_url), (True, self.url))
+
+    def test_check_then_download_then_install_each_needs_its_own_click(self):
+        self.up(action="save", update_check_enabled="1", update_manifest_url=self.url)
+        _, html = self.up(action="check", update_check_enabled="1", update_manifest_url=self.url)
+        self.assertIn("1 newer version listed. Nothing has been downloaded.", html)
+        self.assertIn("Version 9.9.0 (released 2026-10-01) - Sample notes", html)
+        self.assertIn("Download version 9.9.0", html)
+        self.assertEqual([r[1] for r in self.host.requests], ["GET /dss/manifest.json HTTP/1.1"])
+        self.assertEqual((self.pdir / "dssreport/thing.py").read_bytes(), b"VALUE = 1\n")
+        _, html = self.up(action="download:dss-update-9.9.0.dssupdate", update_check_enabled="1", update_manifest_url=self.url)
+        self.assertIn("downloaded and checked. It is NOT installed yet", html)
+        self.assertIn("Downloaded and checked: dss-update-9.9.0.dssupdate", html)
+        self.assertEqual((self.pdir / "dssreport/thing.py").read_bytes(), b"VALUE = 1\n")       # still not installed
+        _, html = self.up(action="install:dss-update-9.9.0.dssupdate", update_check_enabled="1", update_manifest_url=self.url)
+        self.assertIn("Updated from version 0.3.0 to 9.9.0", html)
+        self.assertEqual((self.pdir / "dssreport/thing.py").read_bytes(), b"VALUE = 2\n")
+        self.assertEqual(update_check_downloads(), [])                                         # the downloaded copy is tidied away
+
+    def test_download_without_checking_first_and_unknown_files_are_refused(self):
+        self.up(action="save", update_check_enabled="1", update_manifest_url=self.url)
+        _, html = self.up(action="download:dss-update-9.9.0.dssupdate", update_check_enabled="1", update_manifest_url=self.url)
+        self.assertIn("Press 'Check for updates now' first", html)
+        _, html = self.up(action="install:../../etc/passwd", update_check_enabled="1", update_manifest_url=self.url)
+        self.assertIn("downloaded update file was not found", html)
+
+    def test_a_listed_version_outside_the_updates_period_offers_no_download(self):
+        self.upload_licence(H.make(updates_until=date(2026, 1, 1)))
+        self.up(action="save", update_check_enabled="1", update_manifest_url=self.url)
+        _, html = self.up(action="check", update_check_enabled="1", update_manifest_url=self.url)
+        self.assertIn("Released after your updates period ended. Renew to get it.", html)
+        self.assertNotIn("Download version 9.9.0", html)
+
+    def test_a_bad_address_is_a_plain_message(self):
+        _, html = self.up(action="save", update_check_enabled="1", update_manifest_url="http://updates.example.com/m.json")
+        self.assertIn("must start with https://", html)
+        _, html = self.up(action="save", update_check_enabled="1", update_manifest_url="")
+        self.assertIn("fill in the update address", html)
+
+    def test_token_is_required(self):
+        self.assertEqual(self.post({"action": "check"}, token="wrong", path="/updates")[0], 403)
+
+    def test_a_tampered_list_is_reported_plainly_in_the_page(self):
+        self.host.files["/dss/manifest.json"] = self.host.files["/dss/manifest.json"].replace(b'"v": 1', b'"v": 1 ')[:-5] + b'    }\n'
+        self.up(action="save", update_check_enabled="1", update_manifest_url=self.url)
+        _, html = self.up(action="check", update_check_enabled="1", update_manifest_url=self.url)
+        self.assertIn("update list", html)
+        self.assertNotIn("Download version", html)
+
+
+def update_check_downloads():
+    from dssreport import update_check
+    return update_check.downloaded_files()
+
+
+class LifetimeInSettings(Base):
+    def test_lifetime_is_shown_as_updates_lifetime(self):
+        self.upload_licence(H.make(updates_until="lifetime"))
+        _, html = self.get()
+        self.assertIn('<th scope="row">Updates:</th><td>lifetime</td>', html)
+        self.assertEqual(html.count('<th scope="row">Updates:</th><td>lifetime</td>'), 2)      # licence and updates sections
+        self.assertIn("inside your updates period", html)

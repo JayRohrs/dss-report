@@ -378,3 +378,57 @@ class FlagsAndConnectionsComeOnlyFromTheFile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LifetimeUpdates(unittest.TestCase):
+    def signed(self, value) -> bytes:
+        """A genuinely signed licence whose updates_until is whatever we put there (to test the reader)."""
+        import licence_tool
+        payload = {"customer": "Sample", "instances": 1, "expires": "2099-01-01", "updates_until": value,
+                   "features": [], "issued": "2026-01-01", "licence_id": "x"}
+        pb = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        doc = {"v": 1, "kid": H.KID, "payload": licence_tool.b64(pb),
+               "signature": licence_tool.b64(licence_tool.ed25519_sign.sign(H.SECRET, pb))}
+        return json.dumps(doc).encode()
+
+    def read(self, value):
+        with H.trusted_keys():
+            return L.verify_licence(self.signed(value if not isinstance(value, date) else value.isoformat()))
+
+    def test_lifetime_is_read_dated_values_still_work(self):
+        lic = self.read("lifetime")
+        self.assertTrue(lic.updates_lifetime)
+        self.assertIsNone(lic.updates_until)
+        self.assertEqual(lic.updates_text(), "lifetime")
+        d = self.read(date(2027, 3, 31))
+        self.assertFalse(d.updates_lifetime)
+        self.assertEqual(d.updates_text(), "until 2027-03-31")
+
+    def test_anything_else_is_damaged_not_silently_lifetime(self):
+        for bad in ("Lifetime ", "forever", "unlimited", "", None, 5, True, "2027-13-01"):
+            with self.assertRaises(L.LicenceError, msg=repr(bad)):
+                self.read(bad)
+
+    def test_lifetime_covers_every_release_date_and_survives_expiry(self):
+        s = L.status_for(self.read("lifetime"), TODAY)
+        for d in (date(2020, 1, 1), date(2099, 1, 1), date(9999, 1, 1)):
+            self.assertTrue(s.updates_covered(d))
+        from datetime import timedelta
+        lic = L.Licence("X", 1, TODAY - timedelta(days=5), None, frozenset())
+        self.assertEqual(L.status_for(lic, TODAY).state, L.EXPIRED)               # licence expired, updates still lifetime
+        self.assertTrue(L.status_for(lic, TODAY).updates_covered(date(2099, 1, 1)))
+
+    def test_the_tool_signs_lifetime_and_refuses_junk(self):
+        import io
+        from contextlib import redirect_stdout
+        import licence_tool
+        out = Path(tempfile.mkdtemp())
+        pub = licence_tool.keygen(out, "k", PASS, scrypt_params=FAST)
+        base = ["sign", "--private-key", str(out / "k.private.key"), "--kid", "k", "--customer", "Own Company Sample",
+                "--instances", "1", "--expires", "2099-01-01", "--out", str(out / "l.json")]
+        with redirect_stdout(io.StringIO()):
+            licence_tool.main(base + ["--updates-until", "lifetime"], passphrase=PASS)
+        self.assertTrue(L.verify_licence((out / "l.json").read_bytes(), {"k": pub}).updates_lifetime)
+        for junk in ("forever", "2027-99-99"):
+            with self.assertRaises(SystemExit):
+                licence_tool.main(base + ["--updates-until", junk], passphrase=PASS)

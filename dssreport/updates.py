@@ -158,7 +158,7 @@ def check_allowed(m: Manifest, status: "lic.LicenceStatus", installed: str) -> N
     L = status.licence
     if m.licence_ids and L.licence_id not in m.licence_ids:
         raise UpdateError("This update has not been released to your licence. Contact Jay Rohrs.")
-    if m.release_date > L.updates_until:
+    if not L.updates_lifetime and m.release_date > L.updates_until:
         raise UpdateError(f"Your licence includes updates until {L.updates_until.isoformat()}, and this update was "
                           f"released on {m.release_date.isoformat()}. Renew to get it. Your current version keeps "
                           "working and all your reports are unchanged.")

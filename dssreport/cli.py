@@ -34,8 +34,9 @@ def _parser():
     sub.add_parser("run-now", help="run the R365 report for yesterday now and open it")
     sub.add_parser("forget-secrets", help="remove the saved R365 password and Microsoft 365 sign-in from this computer")
     upd = sub.add_parser("update", help="install an update file you were sent (checked here; nothing goes online)")
-    upd.add_argument("action", choices=["install", "rollback", "status"])
-    upd.add_argument("file", nargs="?", help="the update file (for install)")
+    upd.add_argument("action", choices=["install", "rollback", "status", "check", "download"],
+                     help="check/download use the OPTIONAL online update list (off unless switched on in settings)")
+    upd.add_argument("file", nargs="?", help="install: the update file; download: the version to fetch")
     sch = sub.add_parser("schedule", help="turn the Windows schedule on or off")
     sch.add_argument("action", choices=["install", "remove"])
     r365 = sub.add_parser("r365", help="read-only helpers for the R365 connection")
@@ -85,8 +86,24 @@ def _update(args) -> int:
         print(f"Installed version {__version__} (released {__release_date__}).")
         print(s.message)
         if s.licence:
-            print(f"Updates are included until {s.licence.updates_until.isoformat()}.")
+            print(f"Updates: {s.licence.updates_text()}.")
         print("An earlier version is saved and can be restored." if updates.has_backup() else "No earlier version is saved.")
+    elif args.action in ("check", "download"):
+        from . import update_check
+        from .settings import load_settings
+        s = load_settings()
+        if not s.update_check_enabled:
+            raise updates.UpdateError("Online update checking is switched off. Switch it on in settings first.")
+        found = update_check.check(s.update_manifest_url, __version__)
+        if args.action == "check":
+            print("\n".join(f"Version {a.version} (released {a.release_date.isoformat()}) {a.notes}".rstrip() for a in found)
+                  or "You have the newest version that is listed.")
+        else:
+            entry = next((a for a in found if a.version == args.file), None)
+            if entry is None:
+                raise updates.UpdateError("Say which listed version to download, for example: update download 0.4.0")
+            path = update_check.download(s.update_manifest_url, entry, lic.current_status())
+            print(f"Downloaded and checked: {path}. Install it with: update install \"{path}\"")
     elif args.action == "rollback":
         print(updates.rollback())
     else:

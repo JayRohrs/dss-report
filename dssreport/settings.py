@@ -53,6 +53,8 @@ class Settings:
     schedule_time: str = "07:00"
     schedule_weekdays: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])  # Mon=0
     schedule_late_after_minutes: int = 90
+    update_check_enabled: bool = False   # optional online update check: OFF unless ticked
+    update_manifest_url: str = ""        # the owner's signed update list; no real address is built in
 
     def instance(self, instance_id: str) -> Optional[Instance]:
         return next((i for i in self.instances if i.id == instance_id), None)
@@ -124,6 +126,13 @@ def validate(s: Settings) -> Settings:
         raise ConfigError("The Microsoft app ID should be letters, digits and dashes only.")
     if not re.fullmatch(r"[A-Za-z0-9.-]{1,100}", s.graph_tenant):
         raise ConfigError("The Microsoft tenant should be 'organizations' or a tenant name/ID.")
+    if s.update_manifest_url:
+        from .update_check import is_valid_manifest_url
+        if not is_valid_manifest_url(s.update_manifest_url):
+            raise ConfigError("The update address must start with https:// and have no extra parts "
+                              "(no user name, no ? query, no # part).")
+    if s.update_check_enabled and not s.update_manifest_url:
+        raise ConfigError("To check for updates online, fill in the update address.")
     if s.schedule_late_after_minutes < 0:
         raise ConfigError("'Late after' minutes cannot be negative.")
     return s

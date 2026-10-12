@@ -7,7 +7,7 @@ on the user's computer. Nothing is sent anywhere, ever, for licensing.
 File format (UTF-8 JSON, under 16 KB):
     {"v": 1, "kid": "<key id>", "payload": "<base64url of the payload JSON>", "signature": "<base64url, 64 bytes>"}
 The signature covers the exact payload bytes. The payload JSON holds:
-    customer, instances, expires (YYYY-MM-DD), updates_until (YYYY-MM-DD), features [..], issued, licence_id
+    customer, instances, expires (YYYY-MM-DD), updates_until (YYYY-MM-DD or "lifetime"), features [..], issued, licence_id
 
 What a lapsed or missing licence does (see docs/LICENSING.md): it never hides or deletes a report.
 """
@@ -53,6 +53,8 @@ FEATURE_WORDS = {
 
 #: the explicit value a licence file uses for "no limit on connections"
 UNLIMITED = "unlimited"
+#: the explicit value a licence file uses for "updates never end"
+LIFETIME = "lifetime"
 
 # states
 OK, EXPIRED, NOT_FOUND, INVALID, DEMO = "ok", "expired", "not found", "invalid", "demo"
@@ -71,7 +73,7 @@ class Licence:
     customer: str
     instances: Optional[int]        # None = "unlimited" (an explicit value in the licence file)
     expires: date
-    updates_until: date
+    updates_until: Optional[date]    # None = "lifetime" (an explicit value in the licence file)
     features: FrozenSet[str]
     issued: Optional[date] = None
     licence_id: str = ""
@@ -79,6 +81,14 @@ class Licence:
     @property
     def unlimited(self) -> bool:
         return self.instances is None
+
+    @property
+    def updates_lifetime(self) -> bool:
+        return self.updates_until is None
+
+    def updates_text(self) -> str:
+        """Plain words for the settings screen."""
+        return "lifetime" if self.updates_lifetime else f"until {self.updates_until.isoformat()}"
 
 
 @dataclass
@@ -154,7 +164,9 @@ class LicenceStatus:
 
     def updates_covered(self, release: date) -> Optional[bool]:
         """Is this program version inside the 'supports updates until' date? None if there is no licence."""
-        return None if not self.licence else release <= self.licence.updates_until
+        if not self.licence:
+            return None
+        return self.licence.updates_lifetime or release <= self.licence.updates_until
 
 
 def has_feature(status: LicenceStatus, feature: str) -> bool:
@@ -225,7 +237,7 @@ def verify_licence(raw: bytes, public_keys: Optional[Dict[str, str]] = None) -> 
         raise LicenceError("The licence file is damaged (its details are incomplete).")
     return Licence(
         customer=p["customer"].strip(), instances=None if p["instances"] == UNLIMITED else p["instances"],
-        expires=_date(p["expires"], "the expiry"), updates_until=_date(p["updates_until"], "the updates date"),
+        expires=_date(p["expires"], "the expiry"), updates_until=None if p["updates_until"] == LIFETIME else _date(p["updates_until"], "the updates date"),
         features=frozenset(f for f in features if f in ALL_FEATURES),     # unknown flags are ignored
         issued=_date(p["issued"], "the issue date") if p.get("issued") else None,
         licence_id=str(p.get("licence_id", "")))
