@@ -22,15 +22,22 @@ from .config import Config, dump_rules, parse_config
 from .credstore import CredentialStore, CredentialStoreError, default_store, redact
 from .errors import DssError
 from .graph import GraphClient, deliver_email, scopes_for
-from .r365 import Mapping, check_connection, credential_name
+from .r365 import Mapping
 from .runner import load_rules
 from .state import load_state, seen_locations
-from .settings import Settings, load_settings, save_settings, validate
+from . import licence as lic
+from .settings import Instance, Settings, load_settings, save_settings, unique_id, validate
+from .sources import build_source
 
 IDLE_SECONDS = 30 * 60
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 CSS = """
+.card{border:2px solid var(--line);border-radius:10px;padding:4px 14px 12px;margin:14px 0;background:var(--bg)}
+.card h3{font-size:1.15rem;margin:10px 0 0}
+table.facts{border-collapse:collapse;margin:8px 0}
+table.facts th{text-align:left;padding:4px 14px 4px 0;font-weight:600;vertical-align:top}
+table.facts td{padding:4px 0}
 :root{--bg:#fff;--fg:#1b1f23;--muted:#4a5560;--line:#c9d1d9;--card:#f4f6f8;--accent:#0b5cad;
 --ok:#14532d;--okbg:#e7f6ec;--bad:#8a1c1c;--badbg:#fdecec}
 @media (prefers-color-scheme:dark){:root{--bg:#14181c;--fg:#eef1f4;--muted:#b3bdc7;--line:#3a444e;
@@ -153,9 +160,9 @@ class SettingsApp:
                 raise DssError(f"{label} must be a whole number.")
             return v
 
+        status = lic.current_status()
         raw_rules = {
-            "locations": {"include": _lines(g("locations_include")), "ignore": _hidden_locations(f),
-                          "expected": cfg.expected},
+            "locations": {"include": cfg.include, "ignore": cfg.ignore, "expected": cfg.expected},
             "rules": {
                 "missing_pos_import": {"enabled": on("rule_pos")},
                 "cash_variance": {"enabled": on("rule_cash"), "limit": number("cash_limit", "The cash limit")},
@@ -172,29 +179,34 @@ class SettingsApp:
                    "model": g("ai_model", cfg.ai_model), "timeout_seconds": cfg.ai_timeout},
         }
         new_cfg = parse_config(raw_rules)   # validates (raises ConfigError, a DssError)
+        # switching a licensed feature ON needs the licence to include it (switching off is always allowed)
+        if new_cfg.payments_enabled and not cfg.payments_enabled:
+            status.require(lic.F_OPTIONAL_RULES)
+        if new_cfg.ai_enabled and not cfg.ai_enabled:
+            status.require(lic.F_LOCAL_AI)
 
+        msgs = []
+        instances, secrets_to_write, secrets_to_delete = self._read_instances(f, old_settings, status, msgs)
         days = sorted(int(k[2:]) for k in f if k.startswith("wd") and k[2:].isdigit())
         s = Settings(
-            r365_enabled=on("r365_enabled"), r365_base_url=g("r365_base_url"), r365_username=g("r365_username"),
+            instances=instances,
             email_enabled=on("email_enabled"), email_to=g("email_to"), email_send_auto=on("email_send_auto"),
             graph_client_id=g("graph_client_id"), graph_tenant=g("graph_tenant", "organizations") or "organizations",
             schedule_enabled=on("schedule_enabled"), schedule_time=g("schedule_time", "07:00"),
             schedule_weekdays=days, schedule_late_after_minutes=old_settings.schedule_late_after_minutes)
         validate(s)
+        if s.email_enabled and not old_settings.email_enabled:
+            status.require(lic.F_EMAIL)
+        if s.schedule_enabled and not old_settings.schedule_enabled:
+            status.require(lic.F_SCHEDULE)
 
-        msgs = []
-        password = f.get("r365_password", [""])[0]
-        if password and s.r365_username:
+        for key, secret in secrets_to_write:
             try:
-                self.store.set(credential_name(s.r365_username), password)
-                msgs.append("R365 password saved in this computer's secure store.")
+                self.store.set(key, secret)
             except CredentialStoreError as exc:
                 raise DssError(str(exc))
-        elif password:
-            raise DssError("Fill in the R365 user name before saving a password.")
-        if on("r365_forget") and s.r365_username:
-            self.store.delete(credential_name(s.r365_username))
-            msgs.append("Saved R365 password removed.")
+        for key in secrets_to_delete:
+            self.store.delete(key)
 
         self.rules_path.parent.mkdir(parents=True, exist_ok=True)
         self.rules_path.write_text(dump_rules(new_cfg), encoding="utf-8")
@@ -206,6 +218,78 @@ class SettingsApp:
                 or on("schedule_apply"):
             msgs.append(self._apply_schedule(s))
         return msgs
+
+    def _read_instances(self, f: dict, old: Settings, status: "lic.LicenceStatus", msgs: list):
+        """Turn the connection boxes on the page into Instance objects, enforcing the licence."""
+        g = lambda k, d="": f.get(k, [d])[0].strip()
+        on = lambda k: k in f
+        result, writes, deletes = [], [], []
+        idxs = sorted(int(k[8:]) for k in f if k.startswith("inst_id_") and k[8:].isdigit())
+        kept_enabled = 0
+        newly_enabled = []
+        for i in idxs:
+            old_inst = old.instance(g(f"inst_id_{i}"))
+            if old_inst is None:
+                continue
+            if on(f"inst_remove_{i}"):
+                deletes.append(old_inst.credential_key)
+                msgs.append(f"Connection '{old_inst.name}' removed and its saved password forgotten. "
+                            "Its mapping file was left in place.")
+                continue
+            hidden = []
+            for key, vals in f.items():
+                if key.startswith(f"locname_{i}_") and f"loc_{i}_{key.split('_')[-1]}" not in f and vals[0].strip():
+                    hidden.append(vals[0].strip())
+            inst = Instance(
+                id=old_inst.id, name=g(f"inst_name_{i}"), base_url=g(f"inst_url_{i}"), username=g(f"inst_user_{i}"),
+                enabled=on(f"inst_enabled_{i}"), source_kind=old_inst.source_kind,
+                mapping_file=old_inst.mapping_file, credential_key=old_inst.credential_key,
+                include=_lines(g(f"inst_include_{i}")), hidden=hidden)
+            pw = f.get(f"inst_pw_{i}", [""])[0]
+            if pw:
+                if not inst.username:
+                    raise DssError(f"Fill in the user name for '{inst.name}' before saving its password.")
+                writes.append((inst.credential_key, pw))
+                msgs.append(f"Password for '{inst.name}' saved in this computer's secure store.")
+            if on(f"inst_forget_{i}"):
+                deletes.append(inst.credential_key)
+                msgs.append(f"Saved password for '{inst.name}' removed.")
+            if inst.enabled:
+                if old_inst.enabled:
+                    kept_enabled += 1
+                else:
+                    newly_enabled.append(inst)
+            result.append(inst)
+        # a connection that was not enabled before may only be switched on if the licence has room
+        for inst in newly_enabled:
+            reason = status.can_add_connection(kept_enabled)
+            if reason:
+                raise DssError(reason)
+            kept_enabled += 1
+        new_name = g("new_name")
+        if new_name or g("new_url") or g("new_user"):
+            if not new_name:
+                raise DssError("Give the new connection a name.")
+            reason = status.can_add_connection(kept_enabled)
+            if reason:
+                raise DssError(reason)
+            inst = Instance(id=unique_id(new_name, {r.id for r in old.instances} | {r.id for r in result}),
+                            name=new_name, base_url=g("new_url"), username=g("new_user"), enabled=True)
+            pw = f.get("new_pw", [""])[0]
+            if pw:
+                writes.append((inst.credential_key, pw))
+            result.append(inst)
+            msgs.append(f"Connection '{new_name}' added. Fill in its field mapping file (shown below) to "
+                        "turn \"needs mapping\" checks on.")
+        return result, writes, deletes
+
+    def load_licence(self, raw: bytes) -> str:
+        """Check a licence file and, only if its signature is genuine, keep it."""
+        try:
+            status = lic.install_licence(raw)
+        except lic.LicenceError as exc:
+            raise DssError(f"That licence file was not loaded. {exc}")
+        return f"Licence file loaded. {status.message}"
 
     def _apply_schedule(self, s: Settings) -> str:
         if not _is_windows():
@@ -219,8 +303,14 @@ class SettingsApp:
     # ---------------- buttons
     def action(self, name: str) -> list:
         s, _ = self.current()
-        if name == "test_r365":
-            return [check_connection(s, self.store)]
+        if name.startswith("test_r365:"):
+            inst = s.instance(name.split(":", 1)[1])
+            if inst is None:
+                raise DssError("That connection no longer exists.")
+            status = lic.current_status()
+            if status.instances_allowed == 0:
+                raise DssError(status.message)
+            return [f"{inst.name}: {build_source(inst, self.store).check_connection()}"]
         if name == "m365_start":
             g = self.graph_factory(self.store)
             self.device = g.start_signin(s.graph_client_id, s.graph_tenant, scopes_for(s))
@@ -241,23 +331,36 @@ class SettingsApp:
         return []
 
     # ---------------- view the report, then choose whether to email it
-    def view_dir(self) -> Path:
+    def view_dir(self, folder: Optional[str] = None) -> Path:
+        if folder:
+            # only a folder that really is one of the saved reports; never an arbitrary path
+            if folder in self.report_folders():
+                return paths.reports_dir() / folder
+            raise DssError("That saved report was not found.")
         d = load_state().get("last_report_dir")
         return Path(d) if d else paths.reports_dir()
 
-    def _saved_report(self):
-        d = self.view_dir()
+    def report_folders(self) -> list:
+        root = paths.reports_dir()
+        try:
+            return sorted((p.name for p in root.iterdir() if p.is_dir() and (p / "report.html").exists()), reverse=True)
+        except OSError:
+            return []
+
+    def _saved_report(self, folder: Optional[str] = None):
+        d = self.view_dir(folder)
         try:
             return (d / "report.html").read_text(encoding="utf-8"), (d / "email.txt").read_text(encoding="utf-8")
         except OSError:
             return None
 
-    def email_report(self) -> str:
+    def email_report(self, folder: Optional[str] = None) -> str:
         """Create the email in Microsoft 365 for the report on screen (a draft unless 'send automatically' is on)."""
-        saved = self._saved_report()
+        saved = self._saved_report(folder)
         if not saved:
             raise DssError("There is no report to email yet. Press 'Run now' first.")
         html, text = saved
+        lic.current_status().require(lic.F_EMAIL)
         s = load_settings()
         if not s.email_to:
             raise DssError("Fill in who the email should go to (Email section of settings) first.")
@@ -265,9 +368,12 @@ class SettingsApp:
         body = "\n".join(text.splitlines()[2:])
         return deliver_email(subject, body, html, s, self.store, self.graph_factory(self.store))
 
-    def render_view(self, token: str, messages=(), problem: str = "") -> str:
+    def render_view(self, token: str, messages=(), problem: str = "", folder: Optional[str] = None) -> str:
         e = escape
-        saved = self._saved_report()
+        try:
+            saved = self._saved_report(folder)
+        except DssError as exc:
+            saved, problem = None, str(exc)
         s = load_settings()
         tools = ['<section class="viewbar"><p class="viewlead">Look it over first. Nothing has been emailed.</p>']
         for m in messages:
@@ -281,9 +387,14 @@ class SettingsApp:
             label = ("Send it now through Microsoft 365" if s.email_send_auto
                      else "Create an email draft in Microsoft 365")
             tools.append(f'<form method="post" action="/email"><input type="hidden" name="t" value="{e(token)}">'
+                         f'<input type="hidden" name="d" value="{e(folder or "")}">'
                          f'<button class="primary" type="submit">{e(label)}</button>'
                          f' <a class="btn" href="{e(mailto_link(s.email_to, subject, body))}">Open in my mail app</a>'
                          ' <a class="btn" href="/?t=' + e(token) + '">Settings</a></form>')
+            older = [f for f in self.report_folders() if f != (folder or Path(load_state().get("last_report_dir", "")).name)]
+            if older:
+                tools.append('<p class="hint">Earlier reports (always kept, whatever your licence says): ' + " ".join(
+                    f'<a href="/report?t={e(token)}&amp;d={e(f)}">{e(f)}</a>' for f in older[:30]) + '</p>')
             tools.append('<p class="hint">Microsoft 365 puts the report page on the email as an attachment. '
                          'A phone\'s mail app opens a new message with the text (it cannot attach the page).</p></section>')
             return html.replace("<main>", "<main>" + "".join(tools), 1).replace("</style>", VIEW_CSS + "</style>", 1)
@@ -293,14 +404,104 @@ class SettingsApp:
                 f'<title>View the report</title><style>{CSS}{VIEW_CSS}</style></head><body><main>'
                 + "".join(tools) + '</main></body></html>')
 
+    # ---------------- licence and connections sections
+    def _licence_html(self, status, s: Settings, token: str) -> list:
+        e = escape
+        used = len(s.enabled_instances)
+        out = ['<fieldset><legend>1. Licence</legend>',
+               f'<p class="state">{e(status.message)}</p>']
+        rows = []
+        if status.licence:
+            L = status.licence
+            rows = [("Customer", L.customer),
+                    ("Connections", f"{used} used of {L.instances} allowed" + (" (over the limit)" if used > L.instances else "")),
+                    ("Licence ends", L.expires.isoformat()), ("Updates until", L.updates_until.isoformat()),
+                    ("Includes", ", ".join(lic.FEATURE_WORDS[f] for f in lic.ALL_FEATURES if f in L.features) or "Nothing extra")]
+        else:
+            rows = [("Connections", f"{used} set up, {status.instances_allowed} allowed")]
+        out.append('<table class="facts">' + "".join(
+            f'<tr><th scope="row">{e(a)}</th><td>{e(b)}</td></tr>' for a, b in rows) + '</table>')
+        out.append('<p class="hint">Demo data always works without a licence. A licence that has run out or is missing '
+                   'never hides or deletes a report you already have; it only stops new connections and extras.</p>')
+        out.append(f'<form method="post" action="/licence" enctype="multipart/form-data">'
+                   f'<input type="hidden" name="t" value="{e(token)}">'
+                   '<div class="row"><label for="licence_file">Licence file</label>'
+                   '<input type="file" id="licence_file" name="licence" accept=".json,application/json">'
+                   '<p class="hint">Choose the licence file you were sent. It is checked right here on this computer; '
+                   'nothing is sent anywhere.</p></div>'
+                   '<button type="submit">Load licence file</button></form></fieldset>')
+        return out
+
+    def _connections_html(self, s: Settings, status) -> list:
+        e = escape
+        out = ['<fieldset><legend>2. Restaurant365 connections</legend>']
+        if not s.instances:
+            out.append('<p class="hint">No connection yet. Add one below.</p>')
+        state = load_state()
+        for i, inst in enumerate(s.instances):
+            try:
+                pw_saved = bool(self.store.get(inst.credential_key))
+            except DssError:
+                pw_saved = False
+            try:
+                unmapped = Mapping.load(inst.mapping_path).unmapped()
+                mapped = ("Field mapping: complete." if not unmapped else
+                          f"Field mapping: {len(unmapped)} item(s) not filled in, so those checks show \"needs mapping\".")
+            except DssError as exc:
+                mapped = f"Field mapping problem: {exc}"
+            out.append(f'<div class="card"><input type="hidden" name="inst_id_{i}" value="{e(inst.id)}">'
+                       f'<h3>{e(inst.name)}</h3>')
+            out.append(_checkbox(f"inst_enabled_{i}", inst.enabled, "Connect to this Restaurant365",
+                                 "Reads its daily sales summaries, read-only. Nothing is ever changed in R365."))
+            out.append(_field(f"inst_name_{i}", inst.name, "Name", "How this connection is called in the report."))
+            out.append(_field(f"inst_url_{i}", inst.base_url, "R365 address",
+                              "The OData address your R365 contact gave you. It must start with https://.",
+                              placeholder="https://your-address-from-R365"))
+            out.append(_field(f"inst_user_{i}", inst.username, "User name",
+                              "The way R365 writes it: Domain\\Username.", placeholder="DOMAIN\\username"))
+            out.append(f'<div class="row"><label for="inst_pw_{i}">Password</label>'
+                       f'<input type="password" id="inst_pw_{i}" name="inst_pw_{i}" autocomplete="new-password">'
+                       '<p class="hint">Kept only in this computer\'s secure store, never in a file. '
+                       f'<span class="state">{"A password is saved." if pw_saved else "No password saved yet."}</span> '
+                       'Leave blank to keep the saved one.</p></div>')
+            out.append(_checkbox(f"inst_forget_{i}", False, "Forget the saved password", "Tick and Save to remove it from this computer."))
+            out.append(f'<button type="submit" name="action" value="test_r365:{e(inst.id)}">Save and test this connection</button>')
+            out.append(f'<p class="hint">Field mapping file (private, on this computer, never committed): '
+                       f'{e(str(inst.mapping_path))}. <span class="state">{e(mapped)}</span></p>')
+            out.append(_area(f"inst_include_{i}", inst.include, "Only these locations (optional)",
+                             "One per line, spelled as in R365. A listed location that sends nothing is shown as UNKNOWN. "
+                             "A location that is not listed and sends no rows at all is not shown."))
+            shown = sorted(set(seen_locations(state, inst.id)) | set(inst.hidden), key=str.lower)
+            if shown:
+                out.append('<div class="row"><label>Show or hide a location</label>')
+                for j, name in enumerate(shown):
+                    out.append(f'<label class="check"><input type="hidden" name="locname_{i}_{j}" value="{e(name)}">'
+                               f'<input type="checkbox" name="loc_{i}_{j}" value="1"{"" if name in inst.hidden else " checked"}>'
+                               f'<span>{e(name)}</span></label>')
+                out.append('<p class="hint">Untick a location to leave it out of the report, for example one that has closed. '
+                           'This list fills in after the first report that reads rows from this connection.</p></div>')
+            else:
+                out.append('<p class="hint">After the first report, each location this connection sends appears here '
+                           'with a Show/Hide tick.</p>')
+            out.append(_checkbox(f"inst_remove_{i}", False, "Remove this connection",
+                                 "Tick and Save. Its saved password is forgotten; its mapping file is left alone."))
+            out.append('</div>')
+        out.append('<div class="card"><h3>Add a connection</h3>')
+        reason = status.can_add_connection(len(s.enabled_instances))
+        out.append(f'<p class="hint">{e(reason) if reason else "Fill these in and press Save settings."}</p>')
+        out.append(_field("new_name", "", "Name", "For example the name of the restaurant group this R365 belongs to.", placeholder="a name for this connection"))
+        out.append(_field("new_url", "", "R365 address", "It must start with https://.", placeholder="https://your-address-from-R365"))
+        out.append(_field("new_user", "", "User name", "The way R365 writes it: Domain\\Username.", placeholder="DOMAIN\\username"))
+        out.append('<div class="row"><label for="new_pw">Password</label><input type="password" id="new_pw" name="new_pw" autocomplete="new-password">'
+                   '<p class="hint">Kept only in this computer\'s secure store.</p></div></div>')
+        out.append('</fieldset>')
+        return out
+
     # ---------------- page
     def render(self, token: str, messages=(), problem: str = "") -> str:
         s, c = self.current()
-        try:
-            pw_saved = bool(s.r365_username and self.store.get(credential_name(s.r365_username)))
-            store_note = ""
-        except DssError as exc:
-            pw_saved, store_note = False, str(exc)
+        status = lic.current_status()
+        store_note = ""
         try:
             g = self.graph_factory(self.store)
             m365 = g.signed_in()
@@ -319,50 +520,10 @@ class SettingsApp:
             out.append(f'<p class="msg bad">{e(problem)}</p>')
         if store_note:
             out.append(f'<p class="msg bad">{e(store_note)}</p>')
+        out += self._licence_html(status, s, token)
         out.append(f'<form method="post" action="/"><input type="hidden" name="t" value="{e(token)}">')
 
-        out.append('<fieldset><legend>1. Restaurant365</legend>')
-        out.append(_checkbox("r365_enabled", s.r365_enabled, "Connect to Restaurant365",
-                             "Reads your daily sales summaries, read-only. Nothing is ever changed in R365."))
-        out.append(_field("r365_base_url", s.r365_base_url, "R365 address",
-                          "The OData address your R365 contact gave you. It must start with https://.",
-                          placeholder="https://your-address-from-R365"))
-        out.append(_field("r365_username", s.r365_username, "User name",
-                          "The way R365 writes it: Domain\\Username.", placeholder="DOMAIN\\username"))
-        out.append('<div class="row"><label for="r365_password">Password</label>'
-                   '<input type="password" id="r365_password" name="r365_password" autocomplete="new-password">'
-                   f'<p class="hint">Kept only in this computer\'s secure store, never in a file. '
-                   f'<span class="state">{"A password is saved." if pw_saved else "No password saved yet."}</span> '
-                   'Leave blank to keep the saved one.</p></div>')
-        out.append(_checkbox("r365_forget", False, "Forget the saved password", "Tick and Save to remove it from this computer."))
-        out.append('<button type="submit" name="action" value="test_r365">Save and test the connection</button>')
-        try:
-            unmapped = Mapping.load(paths.mapping_path()).unmapped()
-            mapped_note = ("Field mapping: complete." if not unmapped else
-                           f"Field mapping: {len(unmapped)} item(s) not filled in, so those checks show \"needs mapping\".")
-        except DssError as exc:
-            mapped_note = f"Field mapping problem: {exc}"
-        out.append('<p class="hint">Which R365 fields hold each figure is set in your private mapping file '
-                   f'({e(str(paths.mapping_path()))}), kept on this computer and never committed anywhere. '
-                   f'<span class="state">{e(mapped_note)}</span></p></fieldset>')
-
-        out.append('<fieldset><legend>2. Locations</legend>')
-        out.append(_area("locations_include", c.include, "Only these locations (optional)",
-                         "One per line, spelled as in R365. A listed location that sends nothing is shown as UNKNOWN. "
-                         "A location that is not listed and sends no rows at all is not shown."))
-        shown = sorted(set(seen_locations(load_state())) | set(c.ignore), key=str.lower)
-        if shown:
-            out.append('<div class="row"><label>Show or hide a location</label>')
-            for i, name in enumerate(shown):
-                out.append(f'<label class="check"><input type="hidden" name="loc_name_{i}" value="{e(name)}">'
-                           f'<input type="checkbox" name="loc_show_{i}" value="1"{"" if name in c.ignore else " checked"}>'
-                           f'<span>{e(name)}</span></label>')
-            out.append('<p class="hint">Untick a location to leave it out of the report, for example one that has closed. '
-                       'This list fills in after the first report that reads rows from R365.</p></div>')
-        else:
-            out.append('<p class="hint">After the first report, each location it saw appears here with a '
-                       'Show/Hide tick, so a closed restaurant can be switched off.</p>')
-        out.append('</fieldset>')
+        out += self._connections_html(s, status)
 
         out.append('<fieldset><legend>3. What counts as a problem</legend>')
         out.append(_checkbox("rule_pos", c.pos_enabled, "POS import missing", "Flag a day where the POS import did not arrive."))
@@ -426,17 +587,6 @@ class SettingsApp:
         return "\n".join(out)
 
 
-def _hidden_locations(f: dict) -> list:
-    """Every location listed on the page whose 'Show in the report' box is not ticked."""
-    hidden = []
-    for key, vals in f.items():
-        if key.startswith("loc_name_") and key[9:].isdigit():
-            idx = key[9:]
-            if f"loc_show_{idx}" not in f and vals[0].strip():
-                hidden.append(vals[0].strip())
-    return hidden
-
-
 def _lines(text: str):
     return [ln.strip() for ln in text.replace("\r", "").split("\n") if ln.strip()]
 
@@ -474,32 +624,46 @@ class _Handler(BaseHTTPRequestHandler):
         if u.path not in ("/", "/report") or not self._ok_request(t):
             return self._send(403, "<p>This page can only be opened from the program.</p>")
         if u.path == "/report":
-            return self._send(200, self.server.app.render_view(self.server.token))
+            d = parse_qs(u.query).get("d", [""])[0] or None
+            return self._send(200, self.server.app.render_view(self.server.token, folder=d))
         self._send(200, self.server.app.render(self.server.token))
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         if n > 200_000:
             return self._send(413, "<p>Too much data.</p>")
-        form = parse_qs(self.rfile.read(n).decode("utf-8", "replace"), keep_blank_values=True)
-        if self.path not in ("/", "/email") or not self._ok_request(form.get("t", [""])[0]):
-            return self._send(403, "<p>This page can only be used from the program.</p>")
+        raw = self.rfile.read(n)
         app, messages, problem = self.server.app, [], ""
-        if self.path == "/email":
+        if self.path == "/licence":
+            fields, files = _parse_multipart(self.headers.get("Content-Type", ""), raw)
+            if not self._ok_request(fields.get("t", "")):
+                return self._send(403, "<p>This page can only be used from the program.</p>")
             try:
-                messages.append(app.email_report())
+                if not files.get("licence"):
+                    raise DssError("Choose a licence file first.")
+                messages.append(app.load_licence(files["licence"]))
             except DssError as exc:
                 problem = str(exc)
             self.server.touch()
-            return self._send(200, app.render_view(self.server.token, messages, problem))
+            return self._send(200, app.render(self.server.token, messages, problem))
+        form = parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True)
+        if self.path not in ("/", "/email") or not self._ok_request(form.get("t", [""])[0]):
+            return self._send(403, "<p>This page can only be used from the program.</p>")
+        if self.path == "/email":
+            try:
+                messages.append(app.email_report(form.get("d", [""])[0] or None))
+            except DssError as exc:
+                problem = str(exc)
+            self.server.touch()
+            return self._send(200, app.render_view(self.server.token, messages, problem, form.get("d", [""])[0] or None))
         action = form.get("action", ["save"])[0]
-        password = form.get("r365_password", [""])[0]
+        passwords = [v[0] for k, v in form.items() if (k.startswith("inst_pw_") or k == "new_pw") and v and v[0]]
         try:
             messages += app.apply_form(form)
             if action not in ("save", "quit"):
                 messages += app.action(action)
         except DssError as exc:
-            problem = redact(str(exc), password)
+            problem = redact(str(exc), *passwords)
         self.server.touch()
         if action == "quit" and not problem:
             self._send(200, "<!DOCTYPE html><meta charset=utf-8><p style='font:19px system-ui;padding:20px'>"
@@ -507,6 +671,26 @@ class _Handler(BaseHTTPRequestHandler):
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
         self._send(200, app.render(self.server.token, messages, problem))
+
+
+def _parse_multipart(content_type: str, body: bytes):
+    """Read a small multipart/form-data body (the licence upload). Returns (fields, files)."""
+    from email.parser import BytesParser
+    from email.policy import default
+    fields, files = {}, {}
+    if "multipart/form-data" not in content_type:
+        return fields, files
+    msg = BytesParser(policy=default).parsebytes(b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + body)
+    for part in msg.iter_parts() if msg.is_multipart() else []:
+        name = part.get_param("name", header="content-disposition")
+        if not name:
+            continue
+        payload = part.get_payload(decode=True) or b""
+        if part.get_filename() is not None:
+            files[name] = payload
+        else:
+            fields[name] = payload.decode("utf-8", "replace")
+    return fields, files
 
 
 class SettingsServer(HTTPServer):

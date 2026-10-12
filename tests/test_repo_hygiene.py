@@ -49,7 +49,7 @@ class Hygiene(unittest.TestCase):
     def test_settings_have_no_default_app_id_tenant_or_address(self):
         from dssreport.settings import Settings
         s = Settings()
-        self.assertEqual((s.graph_client_id, s.email_to, s.r365_base_url, s.r365_username), ("", "", "", ""))
+        self.assertEqual((s.graph_client_id, s.email_to, s.instances), ("", "", []))
         self.assertEqual(s.graph_tenant, "organizations")   # a Microsoft keyword, not a tenant
 
 

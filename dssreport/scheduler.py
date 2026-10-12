@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 from xml.sax.saxutils import escape
 
+from . import licence as lic
 from .errors import DssError
 from .paths import app_dir, log_path, reports_dir
 from .settings import Settings
@@ -80,6 +81,8 @@ def scheduled_run(settings: Settings, now: Optional[datetime] = None, input_spec
     from . import runner as runner_mod
     run = runner or runner_mod.run_report
     now = now or datetime.now()
+    if not lic.current_status().has(lic.F_SCHEDULE):
+        return "The automatic schedule is not included in your licence, so nothing was run. " + lic.current_status().message
     state = load_state()
     d = decide(now, settings, state)
     if not d.run:
@@ -94,6 +97,13 @@ def scheduled_run(settings: Settings, now: Optional[datetime] = None, input_spec
         log(f"FAILED for {day}: {exc}", now)
         return f"The scheduled report could not be made: {exc}"
     state["last_report_dir"] = str(reports_dir() / day.isoformat())
+    if getattr(result, "all_failed", False):
+        # the report (listing every connection as "could not connect") was saved so it can be seen,
+        # but nothing was checked, so the slot is not marked done and the next wake-up tries again
+        state["last_error"] = f"{now.isoformat(timespec='minutes')} {result.report.headline}"
+        save_state(state)
+        log(f"NOTHING CHECKED for {day}: {result.report.headline}", now)
+        return result.report.headline
     state["last_slot"] = d.slot.isoformat()
     state["last_run_at"] = now.isoformat(timespec="minutes")
     state["last_headline"] = result.report.headline
@@ -148,6 +158,7 @@ def _pythonw() -> str:
 
 
 def install_task(s: Settings) -> str:
+    lic.current_status().require(lic.F_SCHEDULE)
     if sys.platform != "win32":
         raise DssError("Automatic scheduling is set up through Windows Task Scheduler, "
                        "so it is only available on Windows.")

@@ -31,6 +31,8 @@ class Config:
     ai_endpoint: str = "http://localhost:11434"
     ai_model: str = "your-local-model"
     ai_timeout: float = 30.0
+    # Rules the licence does not include (set by the program at run time, never read from the file)
+    not_licensed: set = field(default_factory=set)
 
 
 _ALLOWED = {

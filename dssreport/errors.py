@@ -8,3 +8,7 @@ class InputError(DssError):
 
 class ConfigError(DssError):
     """The rules file could not be understood."""
+
+
+class ConnectionFailed(InputError):
+    """A connection to a data source could not be made (address, sign-in, network)."""

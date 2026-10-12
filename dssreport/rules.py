@@ -48,7 +48,7 @@ LABELS = {
     SALES_BLANK: "Sales total",
 }
 
-ON, OFF, NEEDS_MAPPING = "on", "off", "needs mapping"
+ON, OFF, NEEDS_MAPPING, NOT_LICENSED = "on", "off", "needs mapping", "not licensed"
 
 
 def _enabled(cfg: Config, rule: str) -> bool:
@@ -61,6 +61,8 @@ def rule_status(cfg: Config, rule: str, unmapped=frozenset()) -> str:
     """ON, OFF (switched off), or NEEDS_MAPPING (data source has no field for it)."""
     if not _enabled(cfg, rule):
         return OFF
+    if rule in cfg.not_licensed:
+        return NOT_LICENSED
     if any(f in unmapped for f in REQUIRES[rule]):
         return NEEDS_MAPPING
     return ON

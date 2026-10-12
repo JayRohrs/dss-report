@@ -38,6 +38,7 @@ def _parser():
     r365 = sub.add_parser("r365", help="read-only helpers for the R365 connection")
     r365.add_argument("action", choices=["test", "discover"],
                       help="test = check the sign-in; discover = list the entities and fields your tenant offers")
+    r365.add_argument("--instance", help="the connection's name (default: the first one)")
     demo = sub.add_parser("demo-data", help="write the made-up demo data as CSV and JSON files")
     demo.add_argument("--out", required=True, help="folder to write into")
     return p
@@ -75,11 +76,10 @@ def _run_now() -> int:
 def _forget() -> int:
     from .credstore import default_store
     from .graph import SESSION_KEY
-    from .r365 import credential_name
     from .settings import load_settings
     store, s = default_store(), load_settings()
-    if s.r365_username:
-        store.delete(credential_name(s.r365_username))
+    for inst in s.instances:
+        store.delete(inst.credential_key)
     store.delete(SESSION_KEY)
     print("Saved passwords and sign-ins were removed from this computer.")
     return 0
@@ -87,13 +87,22 @@ def _forget() -> int:
 
 def _r365(args) -> int:
     from .credstore import default_store
-    from .r365 import check_connection, discover
+    from .errors import InputError
     from .settings import load_settings
-    settings, store = load_settings(), default_store()
+    from .sources import build_source
+    settings = load_settings()
+    if not settings.instances:
+        raise InputError("No R365 connection is set up yet. Open settings and add one.")
+    wanted = (args.instance or "").strip().lower()
+    inst = next((i for i in settings.instances if not wanted or wanted in (i.name.lower(), i.id)), None)
+    if inst is None:
+        raise InputError(f"There is no connection called '{args.instance}'. "
+                         f"You have: {', '.join(i.name for i in settings.instances)}.")
+    source = build_source(inst, default_store())
     if args.action == "test":
-        print(check_connection(settings, store))
+        print(f"{inst.name}: {source.check_connection()}")
     else:
-        print("\n".join(discover(settings, store)))
+        print("\n".join(source.describe()))
     return 0
 
 

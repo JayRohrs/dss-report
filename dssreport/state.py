@@ -22,13 +22,14 @@ def save_state(state: dict, path=None) -> None:
     path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def seen_locations(state: dict) -> list:
-    """Locations that returned rows on earlier runs. Used ONLY to build the show/hide list in the
-    settings screen. They are never treated as expected, so a stale location can't haunt the report."""
-    v = state.get("seen_locations", [])
+def seen_locations(state: dict, instance_id: str) -> list:
+    """Locations that returned rows for one connection on earlier runs. Used ONLY to build the show/hide
+    list in settings. Never treated as expected, so a stale location can't haunt the report."""
+    v = state.get("seen_by_instance", {}).get(instance_id, [])
     return [x for x in v if isinstance(x, str)]
 
 
-def note_seen(state: dict, names) -> dict:
-    state["seen_locations"] = sorted(set(seen_locations(state)) | set(names))
+def note_seen(state: dict, instance_id: str, names) -> dict:
+    by = state.setdefault("seen_by_instance", {})
+    by[instance_id] = sorted(set(seen_locations(state, instance_id)) | set(names))
     return state

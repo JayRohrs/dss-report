@@ -14,20 +14,21 @@ from dssreport.adapters.demo import generate
 from dssreport.config import Config
 from dssreport.credstore import InMemoryStoreForTests
 from dssreport.errors import ConfigError, InputError
-from dssreport.r365 import (Mapping, ODataClient, R365Adapter, check_connection, credential_name,
-                            describe_metadata, discover)
+from dssreport.r365 import Mapping, ODataClient, ODataSource, describe_metadata
 from dssreport.report import build_report
-from dssreport.settings import Settings
+from dssreport.settings import Instance, Settings, save_settings
+
+from . import licence_helpers as H
 
 from .mock_r365 import MAPPING, PASSWORD, USER, MockR365
 
 
 def make(server, mapping=MAPPING, password=PASSWORD, include=()):
-    settings = Settings(r365_enabled=True, r365_base_url=server.url, r365_username=USER)
+    inst = Instance(id="main", name="Sample Group A", base_url=server.url, username=USER)
     store = InMemoryStoreForTests()
     if password is not None:
-        store.set(credential_name(USER), password)
-    return settings, store, R365Adapter(settings, Mapping(mapping), store, include=include)
+        store.set(inst.credential_key, password)
+    return inst, store, ODataSource(inst, store, include=include, mapping=Mapping(mapping))
 
 
 class Fetching(unittest.TestCase):
@@ -46,7 +47,7 @@ class Fetching(unittest.TestCase):
             settings, store, ad = make(srv)
             ad.set_window(date(2026, 3, 13), date(2026, 3, 13))
             ad.load()
-            check_connection(settings, store)
+            ad.check_connection()
         self.assertTrue(srv.requests)
         self.assertEqual({m for m, _, _ in srv.requests}, {"GET"})
         self.assertTrue(all(auth for _, _, auth in srv.requests))
@@ -190,8 +191,8 @@ class Mapping_(unittest.TestCase):
 class DiscoverAndTest(unittest.TestCase):
     def test_discover_lists_entities_and_properties(self):
         with MockR365() as srv:
-            settings, store, _ = make(srv)
-            lines = discover(settings, store)
+            _, _, ad = make(srv)
+            lines = ad.describe()
         self.assertIn("MockDailySales", lines)
         self.assertTrue(any("mockLocation" in x for x in lines))
 
@@ -201,8 +202,8 @@ class DiscoverAndTest(unittest.TestCase):
 
     def test_check_connection(self):
         with MockR365() as srv:
-            settings, store, _ = make(srv)
-            self.assertIn("Connected", check_connection(settings, store))
+            _, _, ad = make(srv)
+            self.assertIn("Connected", ad.check_connection())
 
 
 class CredentialStores(unittest.TestCase):
@@ -245,10 +246,13 @@ cash_over_short = "mockCashOS"
         if include:
             from dssreport.config import Config, dump_rules
             (Path(home) / "rules.toml").write_text(dump_rules(Config(include=include)))
-        save_settings(Settings(r365_enabled=True, r365_base_url=srv.url, r365_username=USER))
+        inst = Instance(id="main", name="Sample Group A", base_url=srv.url, username=USER,
+                        mapping_file="r365_mapping.toml")
+        save_settings(Settings(instances=[inst]))
+        H.install(home)
         store = InMemoryStoreForTests()
-        store.set(credential_name(USER), PASSWORD)
-        with mock.patch("dssreport.credstore.default_store", lambda: store):
+        store.set(inst.credential_key, PASSWORD)
+        with H.trusted_keys(), mock.patch("dssreport.runner.default_store", lambda: store):
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                 code = main(["run", "--input", "r365", "--out", out, "--date", "2026-03-13"])
         self.assertEqual(code, 0)
@@ -259,14 +263,14 @@ cash_over_short = "mockCashOS"
         home = tempfile.mkdtemp()
         with mock.patch.dict("os.environ", {"DSSREPORT_HOME": home}):
             # earlier runs saw the cafe; that must NOT make it "expected" now
-            save_state({"seen_locations": ["Demo Cafe South", "Demo Closed Years Ago"]})
+            save_state({"seen_by_instance": {"main": ["Demo Cafe South", "Demo Closed Years Ago"]}})
             with MockR365() as srv:
                 text = self._run_cli(home, srv)
             self.assertNotIn("Demo Cafe South", text)
             self.assertNotIn("Demo Closed Years Ago", text)
             self.assertIn("sent nothing at all is not listed", text)       # said out loud, in the report
             # seen list grows (for the show/hide toggles only)
-            self.assertIn("Demo Diner West", load_state()["seen_locations"])
+            self.assertIn("Demo Diner West", load_state()["seen_by_instance"]["main"])
 
     def test_silent_location_shows_unknown_when_listed_under_only_these_locations(self):
         home = tempfile.mkdtemp()
@@ -295,11 +299,12 @@ cash_over_short = "mockCashOS"
         out = tempfile.mkdtemp()
         with mock.patch.dict("os.environ", {"DSSREPORT_HOME": home}):
             with MockR365() as srv:
-                from dssreport.settings import save_settings
-                save_settings(Settings(r365_enabled=True, r365_base_url=srv.url, r365_username=USER))
+                inst = Instance(id="main", name="Sample Group A", base_url=srv.url, username=USER)
+                save_settings(Settings(instances=[inst]))
+                H.install(home)
                 store = InMemoryStoreForTests()
-                store.set(credential_name(USER), PASSWORD)
-                with mock.patch("dssreport.credstore.default_store", lambda: store):
+                store.set(inst.credential_key, PASSWORD)
+                with H.trusted_keys(), mock.patch("dssreport.runner.default_store", lambda: store):
                     o, e = io.StringIO(), io.StringIO()
                     with redirect_stdout(o), redirect_stderr(e):
                         code = main(["run", "--input", "r365", "--out", out, "--date", "2026-03-13"])

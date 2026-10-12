@@ -23,21 +23,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import quote, urlparse
 
-from .adapters.base import Adapter
 from .adapters.files import record_from_mapping
 from .credstore import CredentialStore, redact
-from .errors import ConfigError, InputError
+from .errors import ConfigError, ConnectionFailed, InputError
 from .model import DayRecord
-from .settings import Settings, is_safe_url
+from .settings import Instance, is_safe_url
+from .sources import DataSource, check_mapping_format, register_source, CURRENT_MAPPING_VERSION
 
-CRED_NAME_PREFIX = "r365:"
 MAX_DAYS_PER_REQUEST = 31   # a third-party review reports a 31-day cap; unconfirmed, so we stay under it
 FIELD_KEYS = ("sales_total", "cash_over_short", "missing_receipts", "payment_exceptions",
               "approved", "pos_import_received")
-
-
-def credential_name(username: str) -> str:
-    return CRED_NAME_PREFIX + username
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -50,7 +45,7 @@ class ODataClient:
 
     def __init__(self, base_url: str, username: str, password: str, timeout: float = 30.0):
         if not is_safe_url(base_url):
-            raise InputError("The R365 address must start with https://.")
+            raise ConnectionFailed("The R365 address must start with https://.")
         self.base = base_url.rstrip("/")
         self._origin = urlparse(self.base)[:2]
         self._password = password
@@ -61,7 +56,7 @@ class ODataClient:
 
     def _get(self, url: str, accept: str) -> bytes:
         if urlparse(url)[:2] != self._origin:
-            raise InputError("R365 sent a link to a different website. It was not followed "
+            raise ConnectionFailed("R365 sent a link to a different website. It was not followed "
                              "(your sign-in is only ever sent to the address you configured).")
         req = urllib.request.Request(url, method="GET",
                                      headers={"Authorization": self._auth, "Accept": accept})
@@ -70,11 +65,11 @@ class ODataClient:
                 return resp.read()
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
-                raise InputError("R365 refused the sign-in. Check the user name (Domain\\Username) "
+                raise ConnectionFailed("R365 refused the sign-in. Check the user name (Domain\\Username) "
                                  "and password in settings, and that this user may use the OData connector.")
-            raise InputError(f"R365 answered with an error (HTTP {exc.code}).")
+            raise ConnectionFailed(f"R365 answered with an error (HTTP {exc.code}).")
         except (urllib.error.URLError, OSError) as exc:
-            raise InputError("Could not reach R365 at the configured address "
+            raise ConnectionFailed("Could not reach R365 at the configured address "
                              f"({redact(str(getattr(exc, 'reason', exc)), self._password)}).")
 
     def get_json(self, url: str) -> dict:
@@ -106,7 +101,11 @@ class ODataClient:
 
 class Mapping:
     def __init__(self, raw: Optional[dict] = None):
-        raw = raw or {}
+        raw = dict(raw or {})
+        version = raw.pop("version", CURRENT_MAPPING_VERSION)   # files made before versions existed are format 1
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise ConfigError("mapping file: version must be a whole number, like  version = 1")
+        self.version = version
         allowed = {"source": {"entity", "location", "business_date", "date_literal"},
                    "fields": set(FIELD_KEYS),
                    "values": {"approved_true", "approved_false",
@@ -179,39 +178,44 @@ def _flag(value, true_words: Set[str], false_words: Set[str]):
     return None  # not in either list: UNKNOWN, never guessed
 
 
-# ---------------------------------------------------------------- adapter
+# ---------------------------------------------------------------- the OData connector
 
-class R365Adapter(Adapter):
+@register_source
+class ODataSource(DataSource):
+    """Reads one R365 instance through its OData connector (GET only)."""
+
+    kind = "odata"
     name = "Restaurant365 (read-only)"
-    needs_window = True
+    mapping_formats = frozenset({1})
 
-    def __init__(self, settings: Settings, mapping: Mapping, store: CredentialStore, include=()):
-        super().__init__()
-        self.settings, self.mapping, self.store = settings, mapping, store
-        self.include = list(include)
+    def __init__(self, instance: Instance, store: CredentialStore, include=(), mapping: Optional[Mapping] = None):
+        super().__init__(instance, store, include)
+        self.name = f"Restaurant365: {instance.name}"
+        self.mapping = mapping if mapping is not None else Mapping.load(instance.mapping_path)
+        check_mapping_format(self.mapping.version, type(self), str(instance.mapping_path))
         self.start: Optional[date] = None
         self.end: Optional[date] = None
-        self.unmapped = set(mapping.unmapped())
-        if not mapping.can_fetch:
+        self.unmapped = set(self.mapping.unmapped())
+        if not self.mapping.can_fetch:
             self.unmapped.update(FIELD_KEYS + ("payments",))
             self.unmapped_notes.append(
                 "The R365 field mapping is empty, so no data can be read yet. "
                 "See docs/R365_OPEN_QUESTIONS.md and r365_mapping.example.toml.")
         for k in FIELD_KEYS:
-            if not mapping.fields[k]:
+            if not self.mapping.fields[k]:
                 self.unmapped_notes.append(f"No R365 field is mapped for '{k}'.")
 
     def set_window(self, start: date, end: date) -> None:
         self.start, self.end = start, end
 
     def _client(self) -> ODataClient:
-        s = self.settings
-        if not (s.r365_base_url and s.r365_username):
-            raise InputError("R365 is not set up yet. Open the settings screen and fill in the connection.")
-        password = self.store.get(credential_name(s.r365_username))
+        i = self.instance
+        if not (i.base_url and i.username):
+            raise ConnectionFailed("This connection has no address or user name yet. Open settings and fill them in.")
+        password = self.store.get(i.credential_key)
         if not password:
-            raise InputError("No R365 password is saved on this computer. Open the settings screen and enter it.")
-        return ODataClient(s.r365_base_url, s.r365_username, password)
+            raise ConnectionFailed("No R365 password is saved for this connection. Open settings and enter it.")
+        return ODataClient(i.base_url, i.username, password)
 
     def _url(self, start: date, end: date) -> str:
         m = self.mapping
@@ -219,7 +223,7 @@ class R365Adapter(Adapter):
         flt = f"{m.business_date} ge {lit(start)} and {m.business_date} le {lit(end)}"
         props = [m.location, m.business_date] + [v for v in m.fields.values() if v] + list(m.payments.values())
         select = ",".join(dict.fromkeys(props))
-        return (f"{self.settings.r365_base_url.rstrip('/')}/{quote(m.entity)}"
+        return (f"{self.instance.base_url.rstrip('/')}/{quote(m.entity)}"
                 f"?$filter={quote(flt, safe='(),=:-')}&$select={quote(select, safe=',')}")
 
     def load(self) -> List[DayRecord]:
@@ -271,28 +275,15 @@ class R365Adapter(Adapter):
         raw["payments"] = {t: row.get(p) for t, p in m.payments.items()}
         return raw
 
+    def check_connection(self) -> str:
+        self._client().get_metadata_xml()
+        return "Connected to R365 (read-only). The sign-in worked."
 
-# ---------------------------------------------------------------- discover / test
-
-def check_connection(settings: Settings, store: CredentialStore) -> str:
-    """Return a plain sentence. Raises InputError with a plain message on failure."""
-    if not (settings.r365_base_url and settings.r365_username):
-        raise InputError("Fill in the R365 address and user name first.")
-    password = store.get(credential_name(settings.r365_username))
-    if not password:
-        raise InputError("No R365 password is saved yet. Type it in the password box and save.")
-    ODataClient(settings.r365_base_url, settings.r365_username, password).get_metadata_xml()
-    return "Connected to R365 (read-only). The sign-in worked."
+    def describe(self) -> List[str]:
+        return describe_metadata(self._client().get_metadata_xml())
 
 
-def discover(settings: Settings, store: CredentialStore) -> List[str]:
-    """List entity sets and their properties from $metadata, for filling in the mapping file."""
-    password = store.get(credential_name(settings.r365_username)) if settings.r365_username else None
-    if not (settings.r365_base_url and password):
-        raise InputError("Set up the R365 connection first (settings screen).")
-    xml = ODataClient(settings.r365_base_url, settings.r365_username, password).get_metadata_xml()
-    return describe_metadata(xml)
-
+# ---------------------------------------------------------------- $metadata reading
 
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]

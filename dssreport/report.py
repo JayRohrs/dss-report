@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from .config import Config
 from .errors import InputError
 from .model import DayRecord
-from .rules import (ISSUE, LABELS, NEEDS_MAPPING, OFF, ON, PAYMENTS_TOTAL, REQUIRES, UNKNOWN,
+from .rules import (ISSUE, LABELS, NEEDS_MAPPING, NOT_LICENSED, OFF, ON, PAYMENTS_TOTAL, REQUIRES, UNKNOWN,
                     Finding, evaluate_day, rule_status)
 
 NEEDS_REVIEW = "NEEDS REVIEW"
@@ -44,6 +44,8 @@ class Report:
     needs_mapping: List[str] = field(default_factory=list)
     late_note: str = ""
     scope_note: str = ""
+    licence_line: str = ""
+    licence_problem: bool = False
 
     @property
     def total(self) -> int:
@@ -112,6 +114,8 @@ def rules_note(cfg: Config, unmapped=frozenset()) -> List[str]:
         status = rule_status(cfg, rule, unmapped)
         if status == ON:
             notes.append(f"{LABELS[rule]}: {text}")
+        elif status == NOT_LICENSED:
+            notes.append(f"{LABELS[rule]}: NOT IN YOUR LICENCE (not checked)")
         elif status == NEEDS_MAPPING:
             notes.append(f"{LABELS[rule]}: NEEDS MAPPING (not checked; see docs/R365_OPEN_QUESTIONS.md)")
         else:
@@ -159,3 +163,99 @@ def reasons(result: LocationResult, multi_day: bool) -> List[str]:
         text = f.text if f.kind == ISSUE else f"UNKNOWN: {f.text}"
         lines.append(f"{f.business_date.isoformat()}: {text}" if multi_day else text)
     return lines
+
+
+# ------------------------------------------------------------------ several connections in one report
+
+@dataclass
+class Section:
+    """One R365 connection's part of the report: either a Report, or the plain reason it has none."""
+    name: str
+    report: Optional[Report] = None
+    error: str = ""          # e.g. "could not connect: R365 refused the sign-in..."
+
+
+@dataclass
+class MultiReport:
+    title: str
+    dates: List[date]
+    sections: List[Section]
+    headline: str
+    rules_note: List[str] = field(default_factory=list)
+    needs_mapping: List[str] = field(default_factory=list)
+    source_name: str = ""
+    late_note: str = ""
+    licence_line: str = ""
+    licence_problem: bool = False
+    summary_sentence: str = ""
+    summary_source: str = ""
+    scope_note: str = ""
+
+    @property
+    def ok_sections(self) -> List[Section]:
+        return [s for s in self.sections if s.report is not None]
+
+    @property
+    def failed_sections(self) -> List[Section]:
+        return [s for s in self.sections if s.report is None]
+
+    @property
+    def all_failed(self) -> bool:
+        return bool(self.sections) and not self.ok_sections
+
+    @property
+    def multi_day(self) -> bool:
+        return len(self.dates) > 1
+
+    def flat(self) -> Report:
+        """All locations in one list (named "Connection: Location"), for the optional summary sentence."""
+        att, clear = [], []
+        for s in self.ok_sections:
+            for r in s.report.attention:
+                att.append(LocationResult(f"{s.name}: {r.name}", r.findings))
+            for r in s.report.clear:
+                clear.append(LocationResult(f"{s.name}: {r.name}", r.findings))
+        return Report(self.title, self.dates, att, clear, self.headline, self.source_name)
+
+
+def make_multi_headline(sections: List[Section], label: str, skipped: int) -> str:
+    ok = [s for s in sections if s.report is not None]
+    failed = len(sections) - len(ok)
+    if not sections:
+        return "No R365 connections are set up, so nothing could be checked. Status: UNKNOWN."
+    if not ok:
+        return (f"None of the {_n(len(sections), 'connection')} could be reached, so nothing could be "
+                "checked. Status: UNKNOWN.")
+    total = sum(s.report.total for s in ok)
+    attention = sum(len(s.report.attention) for s in ok)
+    unknown_only = sum(s.report.unknown_only for s in ok)
+    where = f"across {_n(len(ok), 'connection')}"
+    caveat = (f" {_n(skipped, 'check')} could not run (needs mapping), so this is not a full all-clear."
+              if skipped else "")
+    fail_note = (f" {_n(failed, 'connection')} could not be reached, so {'its' if failed == 1 else 'their'} "
+                 "locations are UNKNOWN.") if failed else ""
+    if attention == 0:
+        if failed:
+            return f"Nothing flagged at the {_n(len(ok), 'connection')} that answered ({_n(total, 'location')}) for {label}." + fail_note + caveat
+        head = (f"Nothing flagged: all {_n(total, 'location')} {where} passed the checks that ran for {label}."
+                if skipped else f"Nothing to review: all {_n(total, 'location')} {where} checked out for {label}.")
+        return head + caveat
+    clear = total - attention
+    parts = [f"{attention} of {_n(total, 'location')} need a look for {label}, {where}."]
+    parts.append(f"{clear} {'has' if clear == 1 else 'have'} nothing to review." if clear
+                 else "Every location has something to look at.")
+    if unknown_only:
+        parts.append(f"{_n(unknown_only, 'location')} {'is' if unknown_only == 1 else 'are'} "
+                     "UNKNOWN because data is missing.")
+    return " ".join(parts) + fail_note + caveat
+
+
+def build_multi_report(sections: List[Section], cfg: Config, dates: List[date],
+                       source_name: str = "") -> MultiReport:
+    ok = [s for s in sections if s.report is not None]
+    skipped = sorted({x for s in ok for x in s.report.needs_mapping})
+    return MultiReport(
+        title=cfg.title, dates=dates, sections=sections,
+        headline=make_multi_headline(sections, date_label(dates), len(skipped)),
+        rules_note=(ok[0].report.rules_note if ok else rules_note(cfg)), needs_mapping=skipped,
+        source_name=source_name)

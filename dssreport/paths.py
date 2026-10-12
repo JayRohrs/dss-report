@@ -23,7 +23,12 @@ def settings_path() -> Path:
 
 
 def mapping_path() -> Path:
+    """The single mapping file used before there could be several connections (kept for old installs)."""
     return app_dir() / "r365_mapping.toml"
+
+
+def mappings_dir() -> Path:
+    return app_dir() / "mappings"
 
 
 def state_path() -> Path:
