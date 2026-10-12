@@ -19,6 +19,11 @@ class Adapter(ABC):
 
     #: short name shown in the report footer
     name = "adapter"
+    #: True for sources that must be told which dates to fetch (see set_window)
+    needs_window = False
+
+    def set_window(self, start, end) -> None:
+        """Called before load() when needs_window is True."""
 
     def __init__(self):
         #: plain-words notes for the person running the report (for example
