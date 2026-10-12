@@ -132,6 +132,17 @@ class Access(Base):
     def test_only_listens_on_this_computer(self):
         self.assertEqual(self.server.server_address[0], "127.0.0.1")
 
+    def test_a_real_browser_form_post_is_accepted_and_origin_null_is_not(self):
+        """Browsers send Origin: null on form posts when Referrer-Policy is no-referrer. We use same-origin, so
+        the browser sends the real origin (accepted); a literal "null" origin (sandboxed frame) stays refused."""
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/?t={self.server.token}")
+        with urllib.request.urlopen(req) as r:
+            self.assertEqual(r.headers["Referrer-Policy"], "same-origin")
+        origin = f"http://127.0.0.1:{self.port}"
+        self.assertEqual(self.post({"action": "save", **RULES}, headers={"Origin": origin})[0], 200)
+        self.assertEqual(self.post({"action": "save", **RULES}, headers={"Origin": "null"})[0], 403)
+        self.assertEqual(self.post({"action": "save", **RULES}, headers={"Origin": f"http://localhost:{self.port}"})[0], 200)
+
     def test_security_headers(self):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}/?t={self.server.token}")
         with urllib.request.urlopen(req) as r:

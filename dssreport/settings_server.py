@@ -731,7 +731,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Referrer-Policy", "no-referrer")
+        # "same-origin" (not "no-referrer"): browsers send Origin: null on form posts under no-referrer, which
+        # our Origin check (rightly) refuses. Same-origin keeps the one-time token from ever leaving this computer.
+        self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Content-Security-Policy",
                          "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'")
         self.end_headers()

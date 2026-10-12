@@ -92,7 +92,9 @@ Your real field mapping, R365 address and user name, Microsoft app ID and email 
 
 ## Updates
 
-Updates are controlled by Jay Rohrs. The program never goes online to look for them: when an update is released to you, you are sent an update file, and you install it in settings (**Updates**). The program checks on your computer that the file is genuinely from Jay Rohrs and that your licence's update period covers it, replaces only the program files, keeps your settings, passwords, licence and reports exactly as they were, and lets you go back to the previous version. Details: [docs/UPDATES.md](docs/UPDATES.md).
+Updates are controlled by Jay Rohrs. When an update is released to you, you are sent an update file and you install it in settings (**Updates**). The program checks on your computer that the file is genuinely from Jay Rohrs and that your licence's update period (or "Updates: lifetime") covers it, replaces only the program files, keeps your settings, passwords, licence and reports exactly as they were, and lets you go back to the previous version.
+
+There is also an **optional** online check, **off by default**: if you switch it on and give it the address you were given, pressing "Check for updates now" fetches a small signed list of versions, and you choose whether to download and then whether to install. It sends nothing about you (no licence, no name, no computer details). Nothing downloads or installs by itself. Details: [docs/UPDATES.md](docs/UPDATES.md).
 
 ## If R365 changes its API
 
@@ -100,7 +102,7 @@ The program reaches R365 through one interface, so a connector for the new API c
 
 ## Where your data stays
 
-On your computer. Licensing is checked locally and sends nothing. The program makes network calls only to places you set up: your R365 address, Microsoft 365 if you turn email on, and a language model on this same computer if you turn that on. No analytics, no tracking, nothing else. Reports are saved in `%LOCALAPPDATA%\DssReport\reports` (and `out/` for demo runs, which git ignores). The R365 password and Microsoft sign-in live only in the operating system's credential store.
+On your computer. Licensing is checked locally and sends nothing. The program makes network calls only to places you set up (the complete list): your R365 address, Microsoft 365 if you turn email on, a language model on this same computer if you turn that on, and the update list address if you turn the optional update check on and press the button. No analytics, no tracking, nothing else. Reports are saved in `%LOCALAPPDATA%\DssReport\reports` (and `out/` for demo runs, which git ignores). The R365 password and Microsoft sign-in live only in the operating system's credential store.
 
 ## Security
 

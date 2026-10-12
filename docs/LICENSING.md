@@ -8,7 +8,7 @@ A licence is one small file, sent to you by Jay Rohrs. It says:
 - **how many Restaurant365 connections** you may run (a number, or the word `unlimited`),
 - **when it ends** (the expiry date),
 - **which extras it includes** (feature flags, listed below),
-- **"updates until"**: the last date for which new versions are included.
+- **"updates until"**: the last date for which new versions are included, or the word `lifetime`.
 
 It carries a digital signature made with a private key that only Jay has. If anyone changes even one letter of the file, the signature stops matching and the program refuses it.
 
@@ -70,7 +70,7 @@ If a flag is missing, the feature says so in plain words ("Automatic schedule is
 
 ## Updates
 
-"Updates until" is the last date for which new versions are included. The program never goes online to look for updates; the owner sends an update file (see `docs/UPDATES.md`). Running an older or a newer version is never blocked, and the settings screen only shows whether this version is inside your updates period. The date is used at one point: an update file released **after** your "updates until" date is not installed, with a plain "Renew to get it". Your current version and all your reports keep working.
+"Updates until" is the last date for which new versions are included, or the explicit word `lifetime` (no end; shown in settings as "Updates: lifetime"). Any other value makes the file refused as damaged, so a typo can never turn into lifetime updates. The program only looks for updates if the customer switches on the optional online check; otherwise the owner sends an update file (see `docs/UPDATES.md`). Running an older or a newer version is never blocked, and the settings screen only shows whether this version is inside your updates period. The date is used at one point: an update file released **after** your "updates until" date is not installed, with a plain "Renew to get it". Your current version and all your reports keep working.
 
 ---
 
@@ -85,7 +85,7 @@ python tools/licence_tool.py sign --private-key "D:\private-keys\2026-a.private.
 python tools/licence_tool.py show licence.json
 ```
 
-`sign` defaults to the base feature set; add `--features optional_rules,email_m365,...` to change it.
+`sign` lists all four current flags by default; add `--features optional_rules,email_m365,...` to change it. `--instances` takes a number or `unlimited`; `--updates-until` takes a date or `lifetime`.
 
 ### Key custody: the private key is the owner's job, outside this repository
 
@@ -117,10 +117,10 @@ It stops casual sharing and lets Jay sell, renew and limit connections without r
 
 - An expired licence keeps existing connections running (up to the number licensed) and never blocks reports; it blocks adding connections and gets the renewal notice.
 - A missing or invalid licence allows no R365 connections; reports and demo data still work.
-- "Updates until" is shown, not enforced by the licence screen. (How updates themselves are controlled is in `docs/UPDATES.md`.)
+- "Updates until" decides which update files may be installed (a date, or `lifetime`); it never blocks running a version or viewing a report. The optional online update check is built, off by default (see `docs/UPDATES.md`).
 - The four current flags are normally listed in a licence. Connections and flags come only from the file.
 
 ### Still open
 
 1. Where the real private key lives, who can sign, and the backup arrangement (owner's job, outside the repo).
-2. Whether an online update check is wanted at all (see `docs/UPDATES.md`).
+2. The real update key pair and hosting address (see `docs/UPDATES.md`).
