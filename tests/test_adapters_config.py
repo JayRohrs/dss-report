@@ -22,11 +22,11 @@ class Adapters(unittest.TestCase):
         p.write_text(HEADER + body, encoding="utf-8")
         return p
 
-    def test_demo_has_3_locations_14_days(self):
+    def test_demo_has_4_locations_14_days(self):
         recs = generate()
-        self.assertEqual(len({r.location for r in recs}), 3)
+        self.assertEqual(len({r.location for r in recs}), 4)
         self.assertEqual(len({r.business_date for r in recs}), 14)
-        self.assertEqual(len(recs), 3 * 14 - 1)  # one planted no-data day
+        self.assertEqual(len(recs), 4 * 14 - 1)  # one planted no-data day
 
     def test_csv_and_json_demo_files_round_trip(self):
         write_demo_files(self.tmp)

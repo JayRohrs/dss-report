@@ -5,7 +5,8 @@ from dssreport.adapters.demo import PLANTED, generate
 from dssreport.config import Config
 from dssreport.report import build_report
 
-CFG = Config()
+# approval + payments checks are off by default; tests that need them switch them on
+CFG = Config(unapproved_enabled=True, payments_enabled=True)
 
 
 def demo_report(day, days=1, cfg=CFG):

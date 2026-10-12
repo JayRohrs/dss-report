@@ -217,7 +217,7 @@
       "gift_card": null,
       "delivery_app": null
     },
-    "cash_over_short": "1.00",
+    "cash_over_short": null,
     "missing_receipts": 0,
     "payment_exceptions": 0,
     "approved": true,
@@ -565,7 +565,7 @@
     "sales_total": "2930.64",
     "payments": {
       "cash": "527.52",
-      "card": "2110.06",
+      "card": "2070.06",
       "gift_card": "87.92",
       "delivery_app": "205.14"
     },
@@ -601,7 +601,7 @@
       "gift_card": "97.28",
       "delivery_app": "226.98"
     },
-    "cash_over_short": null,
+    "cash_over_short": "-0.14",
     "missing_receipts": 0,
     "payment_exceptions": 0,
     "approved": true,
@@ -641,7 +641,7 @@
   },
   {
     "location": "Demo Cafe South",
-    "business_date": "2026-03-13",
+    "business_date": "2026-03-12",
     "sales_total": "3528.17",
     "payments": {
       "cash": "635.07",
@@ -650,6 +650,230 @@
       "delivery_app": "246.97"
     },
     "cash_over_short": "-0.99",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-02-28",
+    "sales_total": "4368.04",
+    "payments": {
+      "cash": "786.25",
+      "card": "3144.99",
+      "gift_card": "131.04",
+      "delivery_app": "305.76"
+    },
+    "cash_over_short": "-1.47",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-01",
+    "sales_total": "4563.72",
+    "payments": {
+      "cash": "821.47",
+      "card": "3285.88",
+      "gift_card": "136.91",
+      "delivery_app": "319.46"
+    },
+    "cash_over_short": "0.29",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-02",
+    "sales_total": "4265.17",
+    "payments": {
+      "cash": "767.73",
+      "card": "3070.92",
+      "gift_card": "127.96",
+      "delivery_app": "298.56"
+    },
+    "cash_over_short": "-0.97",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-03",
+    "sales_total": "4596.31",
+    "payments": {
+      "cash": "827.34",
+      "card": "3309.34",
+      "gift_card": "137.89",
+      "delivery_app": "321.74"
+    },
+    "cash_over_short": "0.60",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-04",
+    "sales_total": "3987.06",
+    "payments": {
+      "cash": "717.67",
+      "card": "2870.69",
+      "gift_card": "119.61",
+      "delivery_app": "279.09"
+    },
+    "cash_over_short": "0.94",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-05",
+    "sales_total": "4443.73",
+    "payments": {
+      "cash": "799.87",
+      "card": "3199.49",
+      "gift_card": "133.31",
+      "delivery_app": "311.06"
+    },
+    "cash_over_short": "-0.75",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-06",
+    "sales_total": "4345.79",
+    "payments": {
+      "cash": "782.24",
+      "card": "3128.97",
+      "gift_card": "130.37",
+      "delivery_app": "304.21"
+    },
+    "cash_over_short": "0.71",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-07",
+    "sales_total": "3904.37",
+    "payments": {
+      "cash": "702.79",
+      "card": "2811.14",
+      "gift_card": "117.13",
+      "delivery_app": "273.31"
+    },
+    "cash_over_short": "-1.08",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-08",
+    "sales_total": "4423.74",
+    "payments": {
+      "cash": "796.27",
+      "card": "3185.10",
+      "gift_card": "132.71",
+      "delivery_app": "309.66"
+    },
+    "cash_over_short": "0.24",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-09",
+    "sales_total": "4071.73",
+    "payments": {
+      "cash": "732.91",
+      "card": "2931.65",
+      "gift_card": "122.15",
+      "delivery_app": "285.02"
+    },
+    "cash_over_short": null,
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-10",
+    "sales_total": "4470.40",
+    "payments": {
+      "cash": "804.67",
+      "card": "3218.69",
+      "gift_card": "134.11",
+      "delivery_app": "312.93"
+    },
+    "cash_over_short": "-0.38",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-11",
+    "sales_total": "4827.29",
+    "payments": {
+      "cash": "868.91",
+      "card": "3475.65",
+      "gift_card": "144.82",
+      "delivery_app": "337.91"
+    },
+    "cash_over_short": "0.30",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-12",
+    "sales_total": "3756.38",
+    "payments": {
+      "cash": "676.15",
+      "card": "2704.59",
+      "gift_card": "112.69",
+      "delivery_app": "262.95"
+    },
+    "cash_over_short": "0.51",
+    "missing_receipts": 0,
+    "payment_exceptions": 0,
+    "approved": true,
+    "pos_import_received": true
+  },
+  {
+    "location": "Demo Diner West",
+    "business_date": "2026-03-13",
+    "sales_total": "3875.33",
+    "payments": {
+      "cash": "697.56",
+      "card": "2790.24",
+      "gift_card": "116.26",
+      "delivery_app": "271.27"
+    },
+    "cash_over_short": "0.27",
     "missing_receipts": 0,
     "payment_exceptions": 0,
     "approved": true,

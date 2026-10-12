@@ -24,6 +24,7 @@ h2{font-size:1.3rem;margin:32px 0 12px}
 .headline{font-size:1.35rem;font-weight:700;line-height:1.4;background:var(--card);
 border:2px solid var(--line);border-radius:10px;padding:16px;margin:0 0 12px}
 .summary{margin:0 0 8px}
+.warn{border-left:6px solid var(--unk);background:var(--unkbg);color:var(--fg);padding:10px 14px;margin:0 0 12px;border-radius:6px}
 .note{color:var(--muted);font-size:1rem;margin:0 0 8px}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--line)}
@@ -59,6 +60,11 @@ def render_html(report: Report) -> str:
            f'<h1>{e(report.title)}</h1>',
            f'<p class="date">{e(date_label(report.dates))}</p>',
            f'<p class="headline">{e(report.headline)}</p>']
+    if report.late_note:
+        out.append(f'<p class="warn">{e(report.late_note)}</p>')
+    if report.needs_mapping:
+        out.append('<p class="warn">Not checked (needs mapping): ' + e(", ".join(report.needs_mapping))
+                   + '. These checks were skipped because the data source has no confirmed field for them.</p>')
     if report.summary_sentence:
         out.append(f'<p class="summary">{e(report.summary_sentence)}</p>')
         out.append(f'<p class="note">{e(SOURCE_NOTE[report.summary_source])}</p>')
@@ -84,6 +90,8 @@ def render_html(report: Report) -> str:
 
     out.append('<footer><p>How this was decided (edit rules.toml to change):</p><ul>'
                + "".join(f"<li>{e(t)}</li>" for t in report.rules_note) + '</ul>')
+    if report.scope_note:
+        out.append(f'<p>{e(report.scope_note)}</p>')
     out.append(f'<p>Data source: {e(report.source_name)}. Made by a computer program from the '
                'figures above, not from anyone\'s judgement. Nothing was sent anywhere.</p></footer>')
     out.append('</main></body></html>')
@@ -97,6 +105,10 @@ def render_text(report: Report) -> str:
                 if report.attention else
                 ("nothing to review" if report.total else "no data (UNKNOWN)")),
              "", wrap(report.headline)]
+    if report.late_note:
+        lines += ["", wrap("LATE: " + report.late_note.removeprefix("Late: "))]
+    if report.needs_mapping:
+        lines += ["", wrap("NOT CHECKED (needs mapping): " + ", ".join(report.needs_mapping) + ".")]
     if report.summary_sentence:
         lines += ["", wrap(report.summary_sentence)]
     lines += ["", "NEEDS A LOOK", "------------"]
@@ -109,5 +121,7 @@ def render_text(report: Report) -> str:
     lines += ["", "NOTHING TO REVIEW", "-----------------"]
     lines += [f"* {r.name}" for r in report.clear] or ["None."]
     lines += ["", "How this was decided:"] + [wrap(t, "  - ") for t in report.rules_note]
+    if report.scope_note:
+        lines += ["", wrap(report.scope_note)]
     lines += ["", f"Data source: {report.source_name}. Made by a computer program; nothing was sent anywhere."]
     return "\n".join(lines) + "\n"

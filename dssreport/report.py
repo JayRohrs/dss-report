@@ -7,7 +7,8 @@ from typing import Dict, List, Optional
 from .config import Config
 from .errors import InputError
 from .model import DayRecord
-from .rules import ISSUE, UNKNOWN, Finding, evaluate_day
+from .rules import (ISSUE, LABELS, NEEDS_MAPPING, OFF, ON, PAYMENTS_TOTAL, REQUIRES, UNKNOWN,
+                    Finding, evaluate_day, rule_status)
 
 NEEDS_REVIEW = "NEEDS REVIEW"
 UNKNOWN_STATUS = "UNKNOWN"
@@ -39,6 +40,10 @@ class Report:
     summary_sentence: str = ""
     summary_source: str = ""  # "model", "template" or "" (no summary requested)
     rules_note: List[str] = field(default_factory=list)
+    #: checks that could not run because the data source has no mapped field for them
+    needs_mapping: List[str] = field(default_factory=list)
+    late_note: str = ""
+    scope_note: str = ""
 
     @property
     def total(self) -> int:
@@ -63,19 +68,23 @@ def _n(count: int, word: str) -> str:
     return f"{count} {word}" + ("" if count == 1 else "s")
 
 
-def make_headline(attention: int, unknown_only: int, total: int, label: str) -> str:
+def make_headline(attention: int, unknown_only: int, total: int, label: str,
+                  skipped: int = 0) -> str:
     if total == 0:
         return "No locations were found in the data, so nothing could be checked. Status: UNKNOWN."
     clear = total - attention
+    caveat = (f" {_n(skipped, 'check')} could not run (needs mapping), so this is not a full all-clear."
+              if skipped else "")
     if attention == 0:
-        return f"Nothing to review: all {_n(total, 'location')} checked out for {label}."
+        return (f"Nothing flagged: all {_n(total, 'location')} passed the checks that ran for {label}."
+                if skipped else f"Nothing to review: all {_n(total, 'location')} checked out for {label}.") + caveat
     parts = [f"{attention} of {_n(total, 'location')} need a look for {label}."]
     parts.append(f"{clear} {'has' if clear == 1 else 'have'} nothing to review." if clear
                  else "Every location has something to look at.")
     if unknown_only:
         parts.append(f"{_n(unknown_only, 'location')} {'is' if unknown_only == 1 else 'are'} "
                      "UNKNOWN because data is missing.")
-    return " ".join(parts)
+    return " ".join(parts) + caveat
 
 
 def window(records: List[DayRecord], end: Optional[date], days: int) -> List[date]:
@@ -88,40 +97,59 @@ def window(records: List[DayRecord], end: Optional[date], days: int) -> List[dat
     return [end - timedelta(days=days - 1 - i) for i in range(days)]
 
 
-def rules_note(cfg: Config) -> List[str]:
-    def onoff(enabled, text):
-        return text if enabled else text.split(":")[0] + ": switched off"
-    return [
-        onoff(cfg.pos_enabled, "POS import: flagged if it did not arrive"),
-        onoff(cfg.cash_enabled, f"Cash over/short: flagged above ${cfg.cash_limit:,.2f} either way"),
-        onoff(cfg.receipts_enabled, f"Missing receipts: flagged above {cfg.receipts_allowed}"),
-        onoff(cfg.exceptions_enabled, f"Payment exceptions: flagged above {cfg.exceptions_allowed}"),
-        onoff(cfg.unapproved_enabled, "Approval: flagged if not approved"),
-        "No data or a blank value: always shown as UNKNOWN",
-    ]
+def rules_note(cfg: Config, unmapped=frozenset()) -> List[str]:
+    from .rules import (CASH, EXCEPTIONS, POS_IMPORT, RECEIPTS, UNAPPROVED)
+    detail = {
+        POS_IMPORT: "flagged if it did not arrive",
+        CASH: f"flagged above ${cfg.cash_limit:,.2f} either way",
+        RECEIPTS: f"flagged above {cfg.receipts_allowed}",
+        EXCEPTIONS: f"flagged above {cfg.exceptions_allowed}",
+        UNAPPROVED: "flagged if not approved",
+        PAYMENTS_TOTAL: f"flagged if more than ${cfg.payments_tolerance:,.2f} apart",
+    }
+    notes = []
+    for rule, text in detail.items():
+        status = rule_status(cfg, rule, unmapped)
+        if status == ON:
+            notes.append(f"{LABELS[rule]}: {text}")
+        elif status == NEEDS_MAPPING:
+            notes.append(f"{LABELS[rule]}: NEEDS MAPPING (not checked; see docs/R365_OPEN_QUESTIONS.md)")
+        else:
+            notes.append(f"{LABELS[rule]}: switched off")
+    notes.append("No data or a blank value: always shown as UNKNOWN")
+    return notes
+
+
+def skipped_checks(cfg: Config, unmapped=frozenset()) -> List[str]:
+    return [LABELS[r] for r in REQUIRES if rule_status(cfg, r, unmapped) == NEEDS_MAPPING]
 
 
 def build_report(records: List[DayRecord], cfg: Config, end: Optional[date] = None,
-                 days: int = 1, source_name: str = "") -> Report:
+                 days: int = 1, source_name: str = "", unmapped=frozenset()) -> Report:
     dates = window(records, end, days)
     by_key: Dict[tuple, DayRecord] = {(r.location, r.business_date): r for r in records}
-    names = set(cfg.expected) | {r.location for r in records}
+    if cfg.include:
+        names = set(cfg.include)
+    else:
+        names = set(cfg.expected) | {r.location for r in records}
     names -= set(cfg.ignore)
     results = []
     for name in sorted(names, key=str.lower):
         findings: List[Finding] = []
         for day in dates:
-            findings.extend(evaluate_day(name, day, by_key.get((name, day)), cfg))
+            findings.extend(evaluate_day(name, day, by_key.get((name, day)), cfg, unmapped))
         results.append(LocationResult(name, findings))
     order = {NEEDS_REVIEW: 0, UNKNOWN_STATUS: 1}
     attention = sorted((r for r in results if r.findings),
                        key=lambda r: (order[r.status], r.name.lower()))
     clear = [r for r in results if not r.findings]
     unknown_only = sum(1 for r in attention if r.status == UNKNOWN_STATUS)
+    skipped = skipped_checks(cfg, unmapped)
     return Report(
         title=cfg.title, dates=dates, attention=attention, clear=clear,
-        headline=make_headline(len(attention), unknown_only, len(results), date_label(dates)),
-        source_name=source_name, rules_note=rules_note(cfg))
+        headline=make_headline(len(attention), unknown_only, len(results), date_label(dates),
+                               len(skipped)),
+        source_name=source_name, rules_note=rules_note(cfg, unmapped), needs_mapping=skipped)
 
 
 def reasons(result: LocationResult, multi_day: bool) -> List[str]:

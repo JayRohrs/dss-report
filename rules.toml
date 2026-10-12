@@ -1,14 +1,14 @@
 # Review rules for the morning report.
-# Edit this file with any text editor (Notepad, TextEdit). Lines starting with # are notes.
-# Change a number or switch a rule on/off with true / false, save, and run the report again.
+# Edit this file with any text editor, or use the settings screen
+# (python -m dssreport settings). Lines starting with # are notes.
 
 [locations]
-# Leave empty to use every location found in the data.
-# To also report on a location that sent nothing at all, list it here, e.g.
-#   expected = ["Demo Bistro North", "Demo Grill East"]
-# A location with no data is shown as UNKNOWN, never as clean.
+# Only report on these locations. Leave empty to use every location found in the data.
+# A listed location that sent nothing is shown as UNKNOWN, never as clean.
+# (A location that is NOT listed and sends no rows at all is not shown - list it here to be told.)
+include = []
 expected = []
-# Locations to leave out of the report completely (for example one that has closed).
+# Locations switched off (hidden) in the settings screen, for example one that has closed.
 ignore = []
 
 [rules.missing_pos_import]
@@ -32,7 +32,16 @@ allowed = 0
 
 [rules.unapproved_entry]
 # Flag an entry that has not been approved.
+# ON by default - catching entries that were not approved is the point of this tool.
+# With Restaurant365 the report shows "needs mapping" for this check (it does not run)
+# until an approval field is mapped in your private mapping file; then it runs.
 enabled = true
+
+[rules.payments_total]
+# Optional. Flag a day where the payment types do not add up to the sales total
+# (more than this many dollars apart). Off by default.
+enabled = false
+tolerance = 0.01
 
 # Not switchable, on purpose: a location with no data for a day, or a blank
 # value in a field a rule needs, is always shown as UNKNOWN.

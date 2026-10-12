@@ -45,7 +45,7 @@ class Outputs(unittest.TestCase):
         self.assertIn("&lt;b&gt;Evil&lt;/b&gt; &amp; Co", html)
 
     def test_unknown_shown_in_both_outputs_and_never_all_clean(self):
-        r = demo_report(date(2026, 3, 12))  # South has no row
+        r = demo_report(date(2026, 3, 13))  # South has no row
         for text in (render_html(r), render_text(r)):
             self.assertIn("UNKNOWN", text)
             self.assertIn("No data for this day", text)
@@ -63,40 +63,40 @@ class Outputs(unittest.TestCase):
 
 class SummaryChecks(unittest.TestCase):
     def setUp(self):
-        self.report = demo_report(date(2026, 3, 13))  # North + East need a look, South is fine
+        self.report = demo_report(date(2026, 3, 13))  # North + East need a look, South is UNKNOWN, West is fine
 
     def test_template_sentence_agrees_with_itself(self):
         self.assertTrue(summary.sentence_agrees(summary.standard_sentence(self.report), self.report))
 
     def test_good_model_sentence_is_used(self):
-        s = "2 of 3 locations need a look: Demo Bistro North and Demo Grill East."
+        s = "3 of 4 locations need a look: Demo Bistro North, Demo Grill East and Demo Cafe South, and one is UNKNOWN because data is missing."
         self.assertTrue(summary.sentence_agrees(s, self.report))
 
     def test_disagreeing_sentences_are_rejected(self):
-        for s in ["All 3 locations are clean today.",
+        names = "Demo Bistro North, Demo Grill East and Demo Cafe South"
+        for s in ["All 4 locations are clean today.",
                   "Everything is fine, no issues at all.",
-                  "1 of 3 locations need a look: Demo Grill East.",
-                  "2 of 3 locations need a look: Demo Bistro North and Demo Grill East, "
-                  "and 5 receipts are missing.",
-                  "2 of 3 locations need a look: Demo Bistro North, Demo Grill East and Demo Cafe South.",
-                  "Two locations need a look.",
+                  "2 of 4 locations need a look: Demo Bistro North and Demo Grill East.",
+                  f"3 of 4 locations need a look: {names}, and 5 receipts are missing (UNKNOWN data).",
+                  f"3 of 4 locations need a look: {names}, and Demo Diner West (UNKNOWN data).",
+                  "Three locations need a look.",
                   ""]:
             self.assertFalse(summary.sentence_agrees(s, self.report), s)
 
     def test_unknown_must_be_mentioned(self):
-        r = demo_report(date(2026, 3, 12))
-        # South has no data: a sentence that doesn't say so is rejected
-        self.assertFalse(summary.sentence_agrees("1 of 3 locations need a look: Demo Cafe South.", r))
+        names = "Demo Bistro North, Demo Grill East and Demo Cafe South"
+        # South has no data: a sentence that doesn't say data is missing is rejected
+        self.assertFalse(summary.sentence_agrees(f"3 of 4 locations need a look: {names}.", self.report))
         self.assertTrue(summary.sentence_agrees(
-            "1 of 3 locations need a look: Demo Cafe South, which has no data (UNKNOWN).", r))
+            f"3 of 4 locations need a look: {names}; Demo Cafe South has no data (UNKNOWN).", self.report))
 
     def test_add_summary_uses_model_when_it_agrees(self):
-        good = "2 of 3 locations need a look: Demo Bistro North and Demo Grill East."
+        good = "3 of 4 locations need a look: Demo Bistro North, Demo Grill East and Demo Cafe South, and one is UNKNOWN because data is missing."
         note = summary.add_summary(self.report, Config(), ask=lambda p, c: good)
         self.assertEqual((self.report.summary_source, self.report.summary_sentence, note), ("model", good, ""))
 
     def test_add_summary_discards_wrong_sentence(self):
-        note = summary.add_summary(self.report, Config(), ask=lambda p, c: "All 3 locations are clean.")
+        note = summary.add_summary(self.report, Config(), ask=lambda p, c: "All 4 locations are clean.")
         self.assertEqual(self.report.summary_source, "template")
         self.assertEqual(self.report.summary_sentence, summary.standard_sentence(self.report))
         self.assertIn("discarded", note)
@@ -117,7 +117,7 @@ class SummaryChecks(unittest.TestCase):
         self.assertIn("this computer", note)
 
     def test_real_http_round_trip_to_a_local_stub(self):
-        reply = {"text": "2 of 3 locations need a look: Demo Bistro North and Demo Grill East."}
+        reply = {"text": "3 of 4 locations need a look: Demo Bistro North, Demo Grill East and Demo Cafe South, and one is UNKNOWN because data is missing."}
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
@@ -152,7 +152,7 @@ class CommandLine(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             code, out, err = run_cli("run", "--input", "demo", "--out", tmp)
             self.assertEqual(code, 0, err)
-            self.assertIn("2 of 3 locations need a look", out)
+            self.assertIn("3 of 4 locations need a look", out)
             html = (Path(tmp) / "report.html").read_text()
             self.assertTrue((Path(tmp) / "email.txt").exists())
             self.assertNotIn("local model", html)  # AI is off by default

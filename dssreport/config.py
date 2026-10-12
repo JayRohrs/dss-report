@@ -12,6 +12,7 @@ from .errors import ConfigError
 @dataclass
 class Config:
     expected: List[str] = field(default_factory=list)
+    include: List[str] = field(default_factory=list)
     ignore: List[str] = field(default_factory=list)
     pos_enabled: bool = True
     cash_enabled: bool = True
@@ -20,7 +21,11 @@ class Config:
     receipts_allowed: int = 0
     exceptions_enabled: bool = True
     exceptions_allowed: int = 0
+    # On by default. With R365 it shows "needs mapping" (and does not run) until an approval
+    # field is mapped (docs/R365_OPEN_QUESTIONS.md); the moment it is mapped it runs.
     unapproved_enabled: bool = True
+    payments_enabled: bool = False
+    payments_tolerance: Decimal = Decimal("0.01")
     title: str = "Morning exception report"
     ai_enabled: bool = False
     ai_endpoint: str = "http://localhost:11434"
@@ -29,9 +34,9 @@ class Config:
 
 
 _ALLOWED = {
-    "locations": {"expected", "ignore"},
+    "locations": {"expected", "include", "ignore"},
     "rules": {"missing_pos_import", "cash_variance", "missing_receipts",
-              "payment_exceptions", "unapproved_entry"},
+              "payment_exceptions", "unapproved_entry", "payments_total"},
     "report": {"title"},
     "ai": {"enabled", "endpoint", "model", "timeout_seconds"},
 }
@@ -41,6 +46,7 @@ _RULE_KEYS = {
     "missing_receipts": {"enabled", "allowed"},
     "payment_exceptions": {"enabled", "allowed"},
     "unapproved_entry": {"enabled"},
+    "payments_total": {"enabled", "tolerance"},
 }
 
 
@@ -92,6 +98,7 @@ def parse_config(raw: dict) -> Config:
     loc = raw.get("locations", {})
     _check_keys("locations", loc, _ALLOWED["locations"])
     cfg.expected = _names("locations", "expected", loc.get("expected", []))
+    cfg.include = _names("locations", "include", loc.get("include", []))
     cfg.ignore = _names("locations", "ignore", loc.get("ignore", []))
 
     rules = raw.get("rules", {})
@@ -123,6 +130,17 @@ def parse_config(raw: dict) -> Config:
     cfg.exceptions_allowed = _count("rules.payment_exceptions", "allowed", pay.get("allowed", 0))
     cfg.unapproved_enabled = _bool("rules.unapproved_entry", "enabled",
                                    r("unapproved_entry", {}).get("enabled", True))
+    pt = r("payments_total", {})
+    cfg.payments_enabled = _bool("rules.payments_total", "enabled", pt.get("enabled", False))
+    tol = pt.get("tolerance", 0.01)
+    try:
+        if isinstance(tol, bool):
+            raise InvalidOperation
+        cfg.payments_tolerance = Decimal(str(tol))
+    except InvalidOperation:
+        raise ConfigError("rules file: [rules.payments_total] tolerance must be a number of dollars.")
+    if cfg.payments_tolerance < 0:
+        raise ConfigError("rules file: [rules.payments_total] tolerance cannot be negative.")
 
     rep = raw.get("report", {})
     _check_keys("report", rep, _ALLOWED["report"])
@@ -144,3 +162,83 @@ def parse_config(raw: dict) -> Config:
         raise ConfigError("rules file: [ai] timeout_seconds must be a positive number.")
     cfg.ai_timeout = float(timeout)
     return cfg
+
+
+def _q(text: str) -> str:
+    """A TOML basic string."""
+    esc = text.replace("\\", "\\\\").replace('"', '\\"')
+    esc = "".join(c if ord(c) >= 32 else " " for c in esc)
+    return f'"{esc}"'
+
+
+def _list(items) -> str:
+    return "[" + ", ".join(_q(i) for i in items) + "]"
+
+
+def _b(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def dump_rules(cfg: Config) -> str:
+    """Write a Config back out as a readable, commented rules.toml."""
+    return f"""# Review rules for the morning report.
+# Edit this file with any text editor, or use the settings screen
+# (python -m dssreport settings). Lines starting with # are notes.
+
+[locations]
+# Only report on these locations. Leave empty to use every location found in the data.
+# A listed location that sent nothing is shown as UNKNOWN, never as clean.
+# (A location that is NOT listed and sends no rows at all is not shown - list it here to be told.)
+include = {_list(cfg.include)}
+expected = {_list(cfg.expected)}
+# Locations switched off (hidden) in the settings screen, for example one that has closed.
+ignore = {_list(cfg.ignore)}
+
+[rules.missing_pos_import]
+# Flag a day where the POS import did not arrive.
+enabled = {_b(cfg.pos_enabled)}
+
+[rules.cash_variance]
+# Flag cash over or short by more than this many dollars (either direction).
+enabled = {_b(cfg.cash_enabled)}
+limit = {cfg.cash_limit}
+
+[rules.missing_receipts]
+# Flag a day with more missing receipts than this.
+enabled = {_b(cfg.receipts_enabled)}
+allowed = {cfg.receipts_allowed}
+
+[rules.payment_exceptions]
+# Flag a day with more payment exceptions than this.
+enabled = {_b(cfg.exceptions_enabled)}
+allowed = {cfg.exceptions_allowed}
+
+[rules.unapproved_entry]
+# Flag an entry that has not been approved.
+# ON by default - catching entries that were not approved is the point of this tool.
+# With Restaurant365 the report shows "needs mapping" for this check (it does not run)
+# until an approval field is mapped in your private mapping file; then it runs.
+enabled = {_b(cfg.unapproved_enabled)}
+
+[rules.payments_total]
+# Optional. Flag a day where the payment types do not add up to the sales total
+# (more than this many dollars apart). Off by default.
+enabled = {_b(cfg.payments_enabled)}
+tolerance = {cfg.payments_tolerance}
+
+# Not switchable, on purpose: a location with no data for a day, or a blank
+# value in a field a rule needs, is always shown as UNKNOWN.
+
+[report]
+title = {_q(cfg.title)}
+
+[ai]
+# Off by default. The report is fully correct without it.
+# When on, a LOCAL model writes one summary sentence. The sentence is checked
+# against the computed facts and replaced by a standard sentence if it disagrees.
+# Only addresses on this computer (localhost / 127.0.0.1) are accepted.
+enabled = {_b(cfg.ai_enabled)}
+endpoint = {_q(cfg.ai_endpoint)}
+model = {_q(cfg.ai_model)}
+timeout_seconds = {cfg.ai_timeout:g}
+"""

@@ -129,8 +129,9 @@ class FileAdapter(Adapter):
                 key = (rec.location, rec.business_date)
                 if key in seen:
                     raise InputError(
-                        f"{where}: {rec.location} on {rec.business_date} appears twice "
-                        f"(first at {seen[key]}). Remove one so the report can't pick the wrong figures.")
+                        f"{rec.location} has two rows for {rec.business_date} "
+                        f"({seen[key]} and {where}). The report can't tell which one is right, "
+                        f"so it stopped. Delete one of the two rows (or fix its date) and run it again.")
                 seen[key] = where
                 records.append(rec)
         return records
