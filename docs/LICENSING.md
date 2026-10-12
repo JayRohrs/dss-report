@@ -5,7 +5,7 @@
 A licence is one small file, sent to you by Jay Rohrs. It says:
 
 - **who it is for** (the customer name),
-- **how many Restaurant365 connections** you may run,
+- **how many Restaurant365 connections** you may run (a number, or the word `unlimited`),
 - **when it ends** (the expiry date),
 - **which extras it includes** (feature flags, listed below),
 - **"updates until"**: the last date for which new versions are included.
@@ -22,6 +22,10 @@ Open the settings screen, find **1. Licence**, press **Choose file**, pick the l
 
 The Licence section shows, in plain words: the status line, the customer name, connections used out of allowed, the expiry date, the updates date, and what is included.
 
+## Renewal reminders
+
+From **30 days before** the end date, a plain notice appears at the top of the settings screen, in the Licence section, and at the top of every report and report email: `Licence expires in N days (on <date>). Renew to keep adding connections and getting updates.` After the end date it reads `Licence expired on <date> — renew to add connections or get updates.` These are reminders only. They never block a report.
+
 ## What happens in each situation
 
 The rule behind all of it: **a licence problem never deletes or hides a report you already have.** Past reports stay on disk and can always be opened; the "view the report" page, earlier reports and the "open in my mail app" link never check the licence.
@@ -29,8 +33,8 @@ The rule behind all of it: **a licence problem never deletes or hides a report y
 | Situation | The settings line says | What still works | What stops |
 |---|---|---|---|
 | Valid | `Licence: valid for <customer> until <date>.` | Everything the licence includes, up to the connection limit | - |
-| Expired | `Licence: expired on <date>...` | Existing connections keep running (up to the number licensed), existing reports, the extras the licence had, demo data | Adding a connection; updates; anything new |
-| Not found | `Licence: not found...` | Existing reports, demo data, the basic checks on demo data | Connecting to R365 (nothing is licensed); the extras that need a flag |
+| Expired | `Licence: expired on <date>...` plus the renewal notice | Existing connections keep running (up to the number licensed), existing reports, the extras the licence had, demo data | Adding a connection; updates; anything new |
+| Not found | `Licence: not found...` | Existing reports and demo data | Connecting to R365 (no connections are licensed); the extras that need a flag |
 | Not valid (changed, wrong key, damaged) | `Licence: not valid...` plus the reason | Same as "not found" | Same as "not found" |
 | Over the limit (more connections set up than the licence allows) | `Licence: over limit...` | The first connections up to the limit | The extra ones show "not connected: Licence: over limit" in the report |
 | Demo data | `Licence: demo mode (made-up data, no licence needed).` | Everything built so far, so a first-time viewer is never blocked | - |
@@ -45,11 +49,15 @@ One licence can cover several Restaurant365 instances. Each connection has its o
 
 Adding a connection (or switching a switched-off one back on) is checked against the licence: you get `Licence: over limit. Your licence allows 2 connections and 2 are already set up.` and nothing is saved. Removing one makes room.
 
+## Connections and flags come only from the file
+
+The number of connections (a whole number, or `unlimited`) and the list of flags are read from the licence file and nowhere else. The program contains no prices, no plan or tier names and no built-in allowance: with no valid licence it allows zero connections. So terms can change, for example one connection for one customer, several for another, `unlimited` for the owner's own company, just by issuing a different file. A licence may be issued for 1 connection and is checked exactly like any other. Who gets what, and at what price, is the owner's business and lives outside the program.
+
 ## Features (flags)
 
-The program asks one helper, `has_feature`, whether a flag is on. A licence file lists the flags it grants. **Everything built so far is in the base licence.**
+The program asks one helper, `has_feature`, whether a flag is on. A licence file lists the flags it grants. The four flags for everything built so far are normally listed in a licence; the tool's default is to list all four.
 
-| Flag | What it covers | In the base licence |
+| Flag | What it covers | Built today |
 |---|---|---|
 | `optional_rules` | The optional checks (today: payments add up to the sales total) | yes |
 | `email_m365` | Creating or sending the email through Microsoft 365 (the "open in my mail app" link is not gated) | yes |
@@ -79,12 +87,17 @@ python tools/licence_tool.py show licence.json
 
 `sign` defaults to the base feature set; add `--features optional_rules,email_m365,...` to change it.
 
-### The private key never goes in this repository
+### Key custody: the private key is the owner's job, outside this repository
 
-- `keygen` refuses to write a private key inside a git working folder.
-- `.gitignore` blocks `*.private.key`, `*.pem`, `/keys/` and `licence.json`, and a test fails if a private key file appears in the repo.
-- The real private key lives only on Jay's own machine (and a backup somewhere safe and offline). If it is lost, no new licences can be made that old programs accept; if it leaks, anyone can make licences, so treat it like a bank password.
-- Tests never use it. Each test run makes a new throw-away key in memory and tells the program to trust only that.
+The private key is what makes a licence real. Whoever holds it can issue licences. Treat it like the keys to the business.
+
+1. **Keep it outside every git folder.** Not in this repository, not in any other repository, not in a folder that is a copy of one. `keygen` refuses to write it inside a git working folder, `.gitignore` blocks `*.private.key` and `*.pem`, and a test fails if a key file appears in this repo.
+2. **Passphrase-protect it.** `keygen` asks for a passphrase (at least 12 characters) and saves the key file encrypted with it; it will not make an unprotected key. Use a long passphrase kept in a password manager, not in a file next to the key. Signing asks for it each time.
+3. **Keep an offline backup.** At least one copy on a USB drive or similar, stored somewhere safe and not connected to the internet, plus a second copy in a different place. Test that the backup works (sign a test licence with it). Back up the passphrase separately from the key.
+4. **Only the public key is ever copied into the product.** The public half (64 hex characters) goes into `dssreport/licence_keys.py`. The private key file, its passphrase, and anything derived from them never go in the repository, the installer, a chat, an email or a ticket.
+5. **If the key is lost or leaked:** a lost key means no new licences can be made that existing programs accept; a leaked key means anyone can make licences. Either way, make a new pair with a new key id, put the new public key in the next release alongside the old one (so existing licences still verify), and issue new licences with the new key id.
+
+Nothing about the key goes in this repo beyond the public half. Tests never use the real key: each run makes a throw-away key in memory.
 
 ### Before a release (this repository ships with no key)
 
@@ -100,10 +113,14 @@ To change keys later, add the new public key under a new key id and keep the old
 
 It stops casual sharing and lets Jay sell, renew and limit connections without running a server. It cannot stop someone who edits the program's own code on their own computer; the real protection there is the licence terms, not the software. That trade-off is the price of "nothing is sent anywhere".
 
-### Decisions for Jay
+### Decided
 
-1. **Expired licences keep existing connections running** (up to the number licensed) and only block adding new ones. The alternative is to stop connecting at expiry. The first matches "not a lockout"; tell me if you want the second.
-2. **Missing or invalid licence allows no R365 connections** (reports and demo still work). Alternative: let existing connections run unlicensed.
-3. **Enforce "updates until"?** Today it is only shown.
-4. **Base features:** are all four current flags really in the base licence, or should some become paid add-ons?
-5. **Key custody and release process:** where the private key lives, who can sign.
+- An expired licence keeps existing connections running (up to the number licensed) and never blocks reports; it blocks adding connections and gets the renewal notice.
+- A missing or invalid licence allows no R365 connections; reports and demo data still work.
+- "Updates until" is shown, not enforced by the licence screen. (How updates themselves are controlled is in `docs/UPDATES.md`.)
+- The four current flags are normally listed in a licence. Connections and flags come only from the file.
+
+### Still open
+
+1. Where the real private key lives, who can sign, and the backup arrangement (owner's job, outside the repo).
+2. Whether an online update check is wanted at all (see `docs/UPDATES.md`).

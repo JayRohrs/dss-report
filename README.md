@@ -72,7 +72,7 @@ Open it with the desktop shortcut or `python -m dssreport settings`. It is a pag
 
 ### Licence
 
-A licence is a small signed file from Jay Rohrs: customer name, how many R365 connections, an end date, the extras included, and an "updates until" date. The program checks the signature **on your own computer**; nothing is sent anywhere for licensing, there is no account and no server to phone. If a licence ends or is missing, **you keep every report you already have** and can still open it; the program stops adding connections (and, with no licence at all, connecting to R365) and shows a clear "Licence: expired / over limit / not found" line. Demo data never needs a licence. Details: [docs/LICENSING.md](docs/LICENSING.md).
+A licence is a small signed file from Jay Rohrs: customer name, how many R365 connections, an end date, the extras included, and an "updates until" date. The program checks the signature **on your own computer**; nothing is sent anywhere for licensing, there is no account and no server to phone. From 30 days before the end date, a plain reminder ("Licence expires in N days") appears in settings and at the top of each report; after it, "Licence expired on <date> — renew to add connections or get updates." If a licence ends or is missing, **you keep every report you already have** and can still open it; the program stops adding connections (and, with no licence at all, connecting to R365) and shows a clear "Licence: expired / over limit / not found" line. Demo data never needs a licence. Details: [docs/LICENSING.md](docs/LICENSING.md).
 
 ### Several R365 instances
 
