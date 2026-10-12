@@ -22,11 +22,13 @@ def save_state(state: dict, path=None) -> None:
     path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def known_locations(state: dict) -> list:
-    v = state.get("known_locations", [])
+def seen_locations(state: dict) -> list:
+    """Locations that returned rows on earlier runs. Used ONLY to build the show/hide list in the
+    settings screen. They are never treated as expected, so a stale location can't haunt the report."""
+    v = state.get("seen_locations", [])
     return [x for x in v if isinstance(x, str)]
 
 
-def remember_locations(state: dict, names) -> dict:
-    state["known_locations"] = sorted(set(known_locations(state)) | set(names))
+def note_seen(state: dict, names) -> dict:
+    state["seen_locations"] = sorted(set(seen_locations(state)) | set(names))
     return state

@@ -273,7 +273,7 @@ class SettingsApp:
         out.append(_checkbox("rule_exceptions", c.exceptions_enabled, "Payment exceptions", "Flag a day with more payment exceptions than allowed."))
         out.append(_field("exceptions_allowed", c.exceptions_allowed, "Payment exceptions allowed", "0 means flag any exception.", "number", 'min="0"'))
         out.append(_checkbox("rule_unapproved", c.unapproved_enabled, "Entry not approved",
-                             "Off until the R365 approval field is confirmed for your tenant (see docs/R365_OPEN_QUESTIONS.md)."))
+                             "Flag an entry that has not been approved. With R365 this shows \"needs mapping\" until an approval field is mapped."))
         out.append(_checkbox("rule_payments", c.payments_enabled, "Payments add up to sales (optional)",
                              "Flag a day where the payment types don't add up to the sales total. Needs mapping for R365."))
         out.append(_field("payments_tolerance", f"{c.payments_tolerance}", "Payments tolerance ($)", "How far apart they may be before it is flagged.", "number", 'step="0.01" min="0"'))

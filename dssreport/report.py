@@ -43,6 +43,7 @@ class Report:
     #: checks that could not run because the data source has no mapped field for them
     needs_mapping: List[str] = field(default_factory=list)
     late_note: str = ""
+    scope_note: str = ""
 
     @property
     def total(self) -> int:

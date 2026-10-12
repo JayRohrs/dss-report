@@ -12,18 +12,48 @@ from dssreport.report import build_report
 from .helpers import demo_report, planted, rec
 
 
-class ApprovalOffByDefault(unittest.TestCase):
-    def test_default_config_has_approval_and_payments_checks_off(self):
+class ApprovalOnByDefault(unittest.TestCase):
+    """The point of the tool is catching entries that were NOT approved."""
+
+    def test_defaults(self):
         cfg = Config()
-        self.assertFalse(cfg.unapproved_enabled)
+        self.assertTrue(cfg.unapproved_enabled)
         self.assertFalse(cfg.payments_enabled)
 
-    def test_unapproved_entry_is_not_flagged_when_off(self):
+    def test_unapproved_entry_is_flagged_by_default(self):
         f = rules.evaluate_day("X", date(2026, 1, 5), rec(approved=False), Config())
-        self.assertEqual(f, [])
+        self.assertEqual([x.rule for x in f], [rules.UNAPPROVED])
 
-    def test_report_says_approval_is_switched_off(self):
-        r = build_report([rec(approved=False)], Config())
+    def test_demo_shows_a_not_approved_example_by_default(self):
+        from dssreport.adapters.demo import generate
+        r = build_report(generate(), Config())
+        east = [x for x in r.attention if x.name == "Demo Grill East"][0]
+        self.assertIn("Entry is not approved", [f.text for f in east.findings])
+
+    def test_demo_csv_path_shows_it_too(self):
+        from pathlib import Path
+        from dssreport.adapters import build_adapter
+        csv_path = Path(__file__).resolve().parent.parent / "examples/demo/dss_demo.csv"
+        r = build_report(build_adapter(str(csv_path)).load(), Config())
+        text = " ".join(f.text for x in r.attention for f in x.findings)
+        self.assertIn("Entry is not approved", text)
+
+    def test_with_r365_it_says_needs_mapping_until_an_approval_field_is_mapped(self):
+        unmapped = frozenset({"approved"})
+        self.assertEqual(rules.rule_status(Config(), rules.UNAPPROVED, unmapped), rules.NEEDS_MAPPING)
+        f = rules.evaluate_day("X", date(2026, 1, 5), rec(approved=False), Config(), unmapped)
+        self.assertEqual(f, [])           # not run, and not pretending
+        r = build_report([rec(approved=False)], Config(), unmapped=unmapped)
+        self.assertIn("Approval", r.needs_mapping)
+        # once mapped (field no longer unmapped) it runs by itself - no switch to flip
+        self.assertEqual(rules.rule_status(Config(), rules.UNAPPROVED, frozenset()), rules.ON)
+        f = rules.evaluate_day("X", date(2026, 1, 5), rec(approved=False), Config(), frozenset())
+        self.assertEqual([x.rule for x in f], [rules.UNAPPROVED])
+
+    def test_can_still_be_switched_off(self):
+        cfg = Config(unapproved_enabled=False)
+        self.assertEqual(rules.evaluate_day("X", date(2026, 1, 5), rec(approved=False), cfg), [])
+        r = build_report([rec(approved=False)], cfg)
         self.assertIn("Approval: switched off", r.rules_note)
 
 
@@ -67,7 +97,7 @@ class NeedsMapping(unittest.TestCase):
     def test_status_values(self):
         self.assertEqual(rules.rule_status(self.cfg, rules.UNAPPROVED, self.unmapped), rules.NEEDS_MAPPING)
         self.assertEqual(rules.rule_status(self.cfg, rules.POS_IMPORT, self.unmapped), rules.ON)
-        self.assertEqual(rules.rule_status(Config(), rules.UNAPPROVED, self.unmapped), rules.OFF)
+        self.assertEqual(rules.rule_status(Config(unapproved_enabled=False), rules.UNAPPROVED, self.unmapped), rules.OFF)
 
     def test_report_shows_needs_mapping_and_never_claims_full_all_clear(self):
         r = build_report([rec()], self.cfg, unmapped=self.unmapped)
@@ -79,7 +109,7 @@ class NeedsMapping(unittest.TestCase):
             self.assertIn("Cash over/short", text)
 
     def test_disabled_rule_is_not_listed_as_needing_mapping(self):
-        r = build_report([rec()], Config(), unmapped=self.unmapped)
+        r = build_report([rec()], Config(unapproved_enabled=False), unmapped=self.unmapped)
         self.assertNotIn("Approval", r.needs_mapping)
 
 

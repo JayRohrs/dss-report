@@ -21,8 +21,9 @@ class Config:
     receipts_allowed: int = 0
     exceptions_enabled: bool = True
     exceptions_allowed: int = 0
-    # Off until the R365 approval-status mapping is confirmed (docs/R365_OPEN_QUESTIONS.md)
-    unapproved_enabled: bool = False
+    # On by default. With R365 it shows "needs mapping" (and does not run) until an approval
+    # field is mapped (docs/R365_OPEN_QUESTIONS.md); the moment it is mapped it runs.
+    unapproved_enabled: bool = True
     payments_enabled: bool = False
     payments_tolerance: Decimal = Decimal("0.01")
     title: str = "Morning exception report"
@@ -128,7 +129,7 @@ def parse_config(raw: dict) -> Config:
     cfg.exceptions_enabled = _bool("rules.payment_exceptions", "enabled", pay.get("enabled", True))
     cfg.exceptions_allowed = _count("rules.payment_exceptions", "allowed", pay.get("allowed", 0))
     cfg.unapproved_enabled = _bool("rules.unapproved_entry", "enabled",
-                                   r("unapproved_entry", {}).get("enabled", False))
+                                   r("unapproved_entry", {}).get("enabled", True))
     pt = r("payments_total", {})
     cfg.payments_enabled = _bool("rules.payments_total", "enabled", pt.get("enabled", False))
     tol = pt.get("tolerance", 0.01)
@@ -187,9 +188,10 @@ def dump_rules(cfg: Config) -> str:
 [locations]
 # Only report on these locations. Leave empty to use every location found in the data.
 # A listed location that sent nothing is shown as UNKNOWN, never as clean.
+# (A location that is NOT listed and sends no rows at all is not shown - list it here to be told.)
 include = {_list(cfg.include)}
 expected = {_list(cfg.expected)}
-# Locations to leave out of the report completely (for example one that has closed).
+# Locations switched off (hidden) in the settings screen, for example one that has closed.
 ignore = {_list(cfg.ignore)}
 
 [rules.missing_pos_import]
@@ -213,8 +215,9 @@ allowed = {cfg.exceptions_allowed}
 
 [rules.unapproved_entry]
 # Flag an entry that has not been approved.
-# OFF by default: with Restaurant365 this needs the approval-status field to be
-# confirmed first (see docs/R365_OPEN_QUESTIONS.md).
+# ON by default - catching entries that were not approved is the point of this tool.
+# With Restaurant365 the report shows "needs mapping" for this check (it does not run)
+# until an approval field is mapped in your private mapping file; then it runs.
 enabled = {_b(cfg.unapproved_enabled)}
 
 [rules.payments_total]

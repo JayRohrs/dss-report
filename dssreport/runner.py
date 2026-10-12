@@ -10,7 +10,7 @@ from .config import Config, load_config
 from .paths import resolve_rules_path
 from .render import render_html, render_text
 from .report import Report, build_report
-from .state import known_locations, load_state, remember_locations, save_state
+from .state import load_state, note_seen, save_state
 from .summary import add_summary
 
 
@@ -42,20 +42,21 @@ def run_report(input_spec: str, out_dir, end: Optional[date] = None, days: int =
         end = end or date.today() - timedelta(days=1)
         adapter.set_window(end - timedelta(days=max(days, 1) - 1), end)
     records = adapter.load()
-    state = None
-    if adapter.needs_window:
-        state = load_state()
-        cfg.expected = sorted(set(cfg.expected) | set(known_locations(state)))
     notes += [f"Warning: {w}" for w in adapter.warnings]
     report = build_report(records, cfg, end=end, days=days, source_name=adapter.name,
                           unmapped=frozenset(adapter.unmapped))
     report.late_note = late_note
+    if adapter.needs_window and not cfg.include:
+        report.scope_note = ("Only locations that sent rows for these days are shown. A restaurant that "
+                             "sent nothing at all is not listed unless you add it under "
+                             "\"Only these locations\" in settings.")
     if ai or cfg.ai_enabled:
         note = add_summary(report, cfg)
         if note:
             notes.append(f"Note: {note}")
-    if state is not None:
-        save_state(remember_locations(state, {r.location for r in records}))
+    if adapter.needs_window and records:
+        # for the show/hide list in settings only; never used as "expected"
+        save_state(note_seen(load_state(), {r.location for r in records}))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     html, text = render_html(report), render_text(report)

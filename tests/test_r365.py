@@ -229,10 +229,10 @@ class CredentialStores(unittest.TestCase):
 
 
 class CommandLine(unittest.TestCase):
-    def test_locations_seen_before_are_remembered_and_show_unknown_when_silent(self):
-        from dssreport.state import load_state, remember_locations, save_state
+    def _run_cli(self, home, srv, include=None):
         from dssreport.cli import main
-        home, out = tempfile.mkdtemp(), tempfile.mkdtemp()
+        from dssreport.settings import save_settings
+        out = tempfile.mkdtemp()
         mapping = Path(home) / "r365_mapping.toml"
         mapping.write_text("""
 [source]
@@ -242,21 +242,52 @@ business_date = "mockDate"
 [fields]
 cash_over_short = "mockCashOS"
 """)
+        if include:
+            from dssreport.config import Config, dump_rules
+            (Path(home) / "rules.toml").write_text(dump_rules(Config(include=include)))
+        save_settings(Settings(r365_enabled=True, r365_base_url=srv.url, r365_username=USER))
+        store = InMemoryStoreForTests()
+        store.set(credential_name(USER), PASSWORD)
+        with mock.patch("dssreport.credstore.default_store", lambda: store):
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                code = main(["run", "--input", "r365", "--out", out, "--date", "2026-03-13"])
+        self.assertEqual(code, 0)
+        return (Path(out) / "email.txt").read_text()
+
+    def test_silent_location_is_not_remembered_or_listed_unless_the_user_lists_it(self):
+        from dssreport.state import load_state, save_state
+        home = tempfile.mkdtemp()
         with mock.patch.dict("os.environ", {"DSSREPORT_HOME": home}):
-            save_state(remember_locations({}, ["Demo Cafe South", "Demo Grill East"]))
+            # earlier runs saw the cafe; that must NOT make it "expected" now
+            save_state({"seen_locations": ["Demo Cafe South", "Demo Closed Years Ago"]})
             with MockR365() as srv:
-                from dssreport.settings import save_settings
-                save_settings(Settings(r365_enabled=True, r365_base_url=srv.url, r365_username=USER))
-                store = InMemoryStoreForTests()
-                store.set(credential_name(USER), PASSWORD)
-                with mock.patch("dssreport.credstore.default_store", lambda: store):
-                    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                        code = main(["run", "--input", "r365", "--out", out, "--date", "2026-03-13"])
-            self.assertEqual(code, 0)
-            text = (Path(out) / "email.txt").read_text()
-            self.assertIn("Demo Cafe South [UNKNOWN]", text)
-            self.assertIn("No data for this day", text)
-            self.assertIn("Demo Diner West", load_state()["known_locations"])
+                text = self._run_cli(home, srv)
+            self.assertNotIn("Demo Cafe South", text)
+            self.assertNotIn("Demo Closed Years Ago", text)
+            self.assertIn("sent nothing at all is not listed", text)       # said out loud, in the report
+            # seen list grows (for the show/hide toggles only)
+            self.assertIn("Demo Diner West", load_state()["seen_locations"])
+
+    def test_silent_location_shows_unknown_when_listed_under_only_these_locations(self):
+        home = tempfile.mkdtemp()
+        with mock.patch.dict("os.environ", {"DSSREPORT_HOME": home}):
+            with MockR365() as srv:
+                text = self._run_cli(home, srv, include=["Demo Cafe South", "Demo Grill East"])
+        self.assertIn("Demo Cafe South [UNKNOWN]", text)
+        self.assertIn("No data for this day", text)
+        self.assertNotIn("Demo Diner West", text)
+        self.assertNotIn("sent nothing at all is not listed", text)
+
+    def test_rows_with_blank_required_values_show_unknown(self):
+        extra = [{"mockLocation": "Demo Blanks", "mockDate": "2026-03-13", "mockSales": 10.0,
+                  "mockCashOS": None, "mockMissingReceipts": 0, "mockPayExceptions": 0,
+                  "mockStatus": "Done", "mockPosIn": True,
+                  **{f"mockPay_{t}": 0.0 for t in ("cash", "card", "gift_card", "delivery_app")}}]
+        home = tempfile.mkdtemp()
+        with mock.patch.dict("os.environ", {"DSSREPORT_HOME": home}):
+            with MockR365(extra) as srv:
+                text = self._run_cli(home, srv)
+        self.assertIn("Demo Blanks [UNKNOWN]", text)
 
     def test_cli_r365_run_with_everything_unmapped(self):
         from dssreport.cli import main

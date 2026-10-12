@@ -90,6 +90,8 @@ def render_html(report: Report) -> str:
 
     out.append('<footer><p>How this was decided (edit rules.toml to change):</p><ul>'
                + "".join(f"<li>{e(t)}</li>" for t in report.rules_note) + '</ul>')
+    if report.scope_note:
+        out.append(f'<p>{e(report.scope_note)}</p>')
     out.append(f'<p>Data source: {e(report.source_name)}. Made by a computer program from the '
                'figures above, not from anyone\'s judgement. Nothing was sent anywhere.</p></footer>')
     out.append('</main></body></html>')
@@ -119,5 +121,7 @@ def render_text(report: Report) -> str:
     lines += ["", "NOTHING TO REVIEW", "-----------------"]
     lines += [f"* {r.name}" for r in report.clear] or ["None."]
     lines += ["", "How this was decided:"] + [wrap(t, "  - ") for t in report.rules_note]
+    if report.scope_note:
+        lines += ["", wrap(report.scope_note)]
     lines += ["", f"Data source: {report.source_name}. Made by a computer program; nothing was sent anywhere."]
     return "\n".join(lines) + "\n"

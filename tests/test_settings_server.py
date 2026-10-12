@@ -97,8 +97,9 @@ class Page(Base):
     def test_defaults_are_safe(self):
         _, html = self.get()
         for name in ("email_send_auto", "ai_enabled", "email_enabled", "schedule_enabled",
-                     "rule_unapproved", "rule_payments", "r365_enabled"):
+                     "rule_payments", "r365_enabled"):
             self.assertRegex(html, rf'name="{name}" value="1"(?! checked)', name)
+        self.assertRegex(html, r'name="rule_unapproved" value="1" checked')   # approval check on by default
         # weekdays ticked, weekend not
         self.assertRegex(html, r'name="wd0" value="1" checked')
         self.assertRegex(html, r'name="wd6" value="1">')
