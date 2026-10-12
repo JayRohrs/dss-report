@@ -70,7 +70,7 @@ If a flag is missing, the feature says so in plain words ("Automatic schedule is
 
 ## Updates
 
-"Updates until" is the last date for which new versions are included. The program has no updater and never goes online. Each version knows its release date and the settings screen says whether it is inside or newer than your updates period. This is **shown, not enforced**: an older version keeps running forever, and a newer one is not blocked. Whether to enforce it is Jay's decision (see below).
+"Updates until" is the last date for which new versions are included. The program never goes online to look for updates; the owner sends an update file (see `docs/UPDATES.md`). Running an older or a newer version is never blocked, and the settings screen only shows whether this version is inside your updates period. The date is used at one point: an update file released **after** your "updates until" date is not installed, with a plain "Renew to get it". Your current version and all your reports keep working.
 
 ---
 

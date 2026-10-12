@@ -33,6 +33,9 @@ def _parser():
     sub.add_parser("scheduled-run", help="what the schedule runs (does nothing if not due)")
     sub.add_parser("run-now", help="run the R365 report for yesterday now and open it")
     sub.add_parser("forget-secrets", help="remove the saved R365 password and Microsoft 365 sign-in from this computer")
+    upd = sub.add_parser("update", help="install an update file you were sent (checked here; nothing goes online)")
+    upd.add_argument("action", choices=["install", "rollback", "status"])
+    upd.add_argument("file", nargs="?", help="the update file (for install)")
     sch = sub.add_parser("schedule", help="turn the Windows schedule on or off")
     sch.add_argument("action", choices=["install", "remove"])
     r365 = sub.add_parser("r365", help="read-only helpers for the R365 connection")
@@ -71,6 +74,26 @@ def _run_now() -> int:
     state["last_report_dir"] = str(result.html_path.parent)
     save_state(state)
     return serve(path="/report")
+
+
+def _update(args) -> int:
+    from . import __release_date__, __version__
+    from . import licence as lic
+    from . import updates
+    if args.action == "status":
+        s = lic.current_status()
+        print(f"Installed version {__version__} (released {__release_date__}).")
+        print(s.message)
+        if s.licence:
+            print(f"Updates are included until {s.licence.updates_until.isoformat()}.")
+        print("An earlier version is saved and can be restored." if updates.has_backup() else "No earlier version is saved.")
+    elif args.action == "rollback":
+        print(updates.rollback())
+    else:
+        if not args.file:
+            raise updates.UpdateError("Say which update file to install, for example: update install my-update.dssupdate")
+        print(updates.apply_update(args.file, lic.current_status()))
+    return 0
 
 
 def _forget() -> int:
@@ -123,6 +146,8 @@ def main(argv=None) -> int:
             from .settings import load_settings
             print(scheduled_run(load_settings()))
             return 0
+        if args.command == "update":
+            return _update(args)
         if args.command == "run-now":
             return _run_now()
         if args.command == "forget-secrets":

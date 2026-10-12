@@ -608,3 +608,90 @@ class RenewalAndUnlimitedInSettings(Base):
         self.assertEqual(len(load_settings().instances), 5)
         _, html = self.get()
         self.assertIn("unlimited (5 in use)", html)
+
+
+class UpdatesSection(Base):
+    def setUp(self):
+        super().setUp()
+        from . import test_updates as U
+        self.U = U
+        self.pdir = Path(tempfile.mkdtemp())
+        for rel, data in U.OLD.items():
+            (self.pdir / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.pdir / rel).write_bytes(data)
+        self.app.program_dir = self.pdir
+        k = U.update_keys()
+        k.__enter__()
+        self.addCleanup(lambda: k.__exit__(None, None, None))
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def package(self, **kw):
+        out = self.tmp / f"p{len(list(self.tmp.iterdir()))}.dssupdate"
+        self.U.update_tool.build_update(self.U.USECRET, self.U.UKID, self.U.NEW, "9.9.0", date(2026, 10, 1), out, **kw)
+        return out.read_bytes()
+
+    def upload(self, raw, path="/update", token=None):
+        boundary = "----upd"
+        body = (f'--{boundary}\r\nContent-Disposition: form-data; name="t"\r\n\r\n{token or self.server.token}\r\n'.encode()
+                + f'--{boundary}\r\nContent-Disposition: form-data; name="update"; filename="u.dssupdate"\r\n'
+                  f'Content-Type: application/octet-stream\r\n\r\n'.encode() + raw + f"\r\n--{boundary}--\r\n".encode())
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=body,
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, htmllib.unescape(r.read().decode())
+        except urllib.error.HTTPError as e:
+            return e.code, htmllib.unescape(e.read().decode())
+
+    def test_section_explains_owner_control_and_shows_versions(self):
+        _, html = self.get()
+        self.assertIn("2. Updates", html)
+        self.assertIn("Installed version", html)
+        self.assertIn("never goes online", html)
+        self.assertIn('name="update"', html)
+        self.assertNotIn("Go back to the previous version", html)
+
+    def test_installing_a_signed_update_file_and_going_back(self):
+        status, html = self.upload(self.package())
+        self.assertEqual(status, 200)
+        self.assertIn("to 9.9.0", html)
+        self.assertEqual((self.pdir / "dssreport/thing.py").read_bytes(), b"VALUE = 2\n")
+        self.assertIn("Go back to the previous version", html)
+        _, html = self.post({}, path="/rollback")
+        self.assertIn("Went back to version", html)
+        self.assertEqual((self.pdir / "dssreport/thing.py").read_bytes(), b"VALUE = 1\n")
+
+    def test_refusals_are_plain_and_change_nothing(self):
+        _, html = self.upload(b"not an update")
+        self.assertIn("not an update file", html)
+        wrong = self.U.update_tool.build_update(self.U.OTHER_USECRET, self.U.UKID, self.U.NEW, "9.9.0",
+                                                date(2026, 10, 1), self.tmp / "w.dssupdate")
+        _, html = self.upload(wrong.read_bytes())
+        self.assertIn("changed or was not made by Jay Rohrs", html)
+        _, html = self.upload(self.package(licence_ids=["someone-elses-licence"]))
+        self.assertIn("has not been released to your licence", html)
+        self.assertEqual((self.pdir / "dssreport/thing.py").read_bytes(), b"VALUE = 1\n")
+
+    def test_update_period_is_enforced_here_and_the_rest_of_settings_still_works(self):
+        self.upload_licence(H.make(updates_until=date(2026, 1, 1)))
+        _, html = self.upload(self.package())
+        self.assertIn("includes updates until 2026-01-01", html)
+        self.assertIn("Licence: valid for", html)                          # nothing else was blocked
+
+    def test_needs_the_token_and_a_file(self):
+        self.assertEqual(self.upload(self.package(), token="wrong")[0], 403)
+        self.assertEqual(self.post({}, token="wrong", path="/rollback")[0], 403)
+        boundary = "x"
+        body = f'--{boundary}\r\nContent-Disposition: form-data; name="t"\r\n\r\n{self.server.token}\r\n--{boundary}--\r\n'.encode()
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/update", data=body,
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        with urllib.request.urlopen(req) as r:
+            self.assertIn("Choose an update file first", htmllib.unescape(r.read().decode()))
+
+    def test_licence_and_settings_files_are_never_touched_by_an_update(self):
+        before = (self.home / "licence.json").read_bytes()
+        self.add_instance()
+        settings_before = (self.home / "settings.json").read_bytes()
+        self.upload(self.package())
+        self.assertEqual((self.home / "licence.json").read_bytes(), before)
+        self.assertEqual((self.home / "settings.json").read_bytes(), settings_before)

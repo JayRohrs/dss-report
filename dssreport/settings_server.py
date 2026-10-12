@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from datetime import date
 
-from . import __release_date__, paths, scheduler
+from . import __release_date__, __version__, paths, scheduler, updates
 from .config import Config, dump_rules, parse_config
 from .credstore import CredentialStore, CredentialStoreError, default_store, redact
 from .errors import DssError
@@ -126,8 +126,10 @@ class SettingsApp:
     """The state and actions behind the page. Kept apart from HTTP so it is easy to test."""
 
     def __init__(self, store: Optional[CredentialStore] = None, rules_path=None,
-                 graph_factory: Optional[Callable[[CredentialStore], GraphClient]] = None):
+                 graph_factory: Optional[Callable[[CredentialStore], GraphClient]] = None,
+                 program_dir: Optional[Path] = None):
         self._store = store
+        self.program_dir = Path(program_dir) if program_dir else updates.program_dir()
         self.rules_path = paths.resolve_rules_path(rules_path)
         self.graph_factory = graph_factory or (lambda st: GraphClient(st))
         self.device = None
@@ -285,6 +287,19 @@ class SettingsApp:
                         "turn \"needs mapping\" checks on.")
         return result, writes, deletes
 
+    def install_update(self, raw: bytes) -> str:
+        """Install an update file the owner sent. Checked here; nothing is downloaded."""
+        tmp = paths.app_dir() / "incoming-update.dssupdate"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(raw)
+        try:
+            return updates.apply_update(tmp, lic.current_status(), self.program_dir)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def rollback_update(self) -> str:
+        return updates.rollback(self.program_dir)
+
     def load_licence(self, raw: bytes) -> str:
         """Check a licence file and, only if its signature is genuine, keep it."""
         try:
@@ -439,9 +454,33 @@ class SettingsApp:
                    '<button type="submit">Load licence file</button></form></fieldset>')
         return out
 
+    def _updates_html(self, status, token: str) -> list:
+        e = escape
+        until = status.licence.updates_until.isoformat() if status.licence else "no licence loaded"
+        rows = [("Installed version", f"{__version__} (released {__release_date__})"),
+                ("Updates included until", until),
+                ("Earlier version saved", "yes, you can go back to it" if updates.has_backup() else "no")]
+        out = ['<fieldset><legend>2. Updates</legend>',
+               '<table class="facts">' + "".join(f'<tr><th scope="row">{e(a)}</th><td>{e(b)}</td></tr>' for a, b in rows) + '</table>',
+               '<p class="hint">Updates reach you only when Jay Rohrs sends you an update file. This program never goes '
+               'online to look for one. The file is checked on this computer (it must be signed by Jay Rohrs and '
+               'inside your updates period) and only the program files are replaced. Your settings, saved passwords, '
+               'licence and reports are never touched.</p>',
+               f'<form method="post" action="/update" enctype="multipart/form-data">'
+               f'<input type="hidden" name="t" value="{e(token)}">'
+               '<div class="row"><label for="update_file">Update file</label>'
+               '<input type="file" id="update_file" name="update" accept=".dssupdate,.zip">'
+               '<p class="hint">Choose the update file you were sent, then close and reopen this program afterwards.</p></div>'
+               '<button type="submit">Install update file</button></form>']
+        if updates.has_backup():
+            out.append(f'<form method="post" action="/rollback"><input type="hidden" name="t" value="{e(token)}">'
+                       '<button type="submit">Go back to the previous version</button></form>')
+        out.append('</fieldset>')
+        return out
+
     def _connections_html(self, s: Settings, status) -> list:
         e = escape
-        out = ['<fieldset><legend>2. Restaurant365 connections</legend>']
+        out = ['<fieldset><legend>3. Restaurant365 connections</legend>']
         if not s.instances:
             out.append('<p class="hint">No connection yet. Add one below.</p>')
         state = load_state()
@@ -530,11 +569,12 @@ class SettingsApp:
         if status.notice:
             out.append(f'<p class="msg bad">{e(status.notice)}</p>')
         out += self._licence_html(status, s, token)
+        out += self._updates_html(status, token)
         out.append(f'<form method="post" action="/"><input type="hidden" name="t" value="{e(token)}">')
 
         out += self._connections_html(s, status)
 
-        out.append('<fieldset><legend>3. What counts as a problem</legend>')
+        out.append('<fieldset><legend>4. What counts as a problem</legend>')
         out.append(_checkbox("rule_pos", c.pos_enabled, "POS import missing", "Flag a day where the POS import did not arrive."))
         out.append(_checkbox("rule_cash", c.cash_enabled, "Cash over or short",
                              "Flag cash that is over or short by more than the limit below."))
@@ -550,7 +590,7 @@ class SettingsApp:
         out.append(_field("payments_tolerance", f"{c.payments_tolerance}", "Payments tolerance ($)", "How far apart they may be before it is flagged.", "number", 'step="0.01" min="0"'))
         out.append('<p class="hint">A location with no data, or a blank figure, is always shown as UNKNOWN. That cannot be switched off.</p></fieldset>')
 
-        out.append('<fieldset><legend>4. Email</legend>')
+        out.append('<fieldset><legend>5. Email</legend>')
         out.append(_checkbox("email_enabled", s.email_enabled, "Prepare an email each time the report runs",
                              "Puts the report in your own Microsoft 365 mailbox as a draft you can read and send."))
         out.append(_field("email_to", s.email_to, "Send the email to",
@@ -572,7 +612,7 @@ class SettingsApp:
             out.append(f'<p>Your code: <span class="code">{e(self.device.user_code)}</span></p>')
         out.append('</fieldset>')
 
-        out.append('<fieldset><legend>5. Schedule</legend>')
+        out.append('<fieldset><legend>6. Schedule</legend>')
         out.append(_checkbox("schedule_enabled", s.schedule_enabled, "Run the report automatically",
                              "Runs it on your computer at the time below and emails it if email is on."))
         out.append(_field("schedule_time", s.schedule_time, "Time of day", "Your computer's clock, 24-hour.", "time"))
@@ -582,7 +622,7 @@ class SettingsApp:
                    + '</div><p class="hint">Weekdays by default. If the computer was off, the report runs once when it next starts and is marked late.</p></div>')
         out.append('</fieldset>')
 
-        out.append('<fieldset><legend>6. Plain-language summary (optional)</legend>')
+        out.append('<fieldset><legend>7. Plain-language summary (optional)</legend>')
         out.append(_checkbox("ai_enabled", c.ai_enabled, "Add a one-sentence summary from a model on this computer",
                              "Off by default. The report is complete and correct without it; a summary that disagrees with the numbers is thrown away."))
         out.append(_field("ai_endpoint", c.ai_endpoint, "Model address", "Must be on this computer (localhost)."))
@@ -639,7 +679,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        if n > 200_000:
+        if n > (updates.MAX_TOTAL_BYTES + 100_000 if self.path == "/update" else 200_000):
             return self._send(413, "<p>Too much data.</p>")
         raw = self.rfile.read(n)
         app, messages, problem = self.server.app, [], ""
@@ -655,7 +695,28 @@ class _Handler(BaseHTTPRequestHandler):
                 problem = str(exc)
             self.server.touch()
             return self._send(200, app.render(self.server.token, messages, problem))
+        if self.path == "/update":
+            fields, files = _parse_multipart(self.headers.get("Content-Type", ""), raw)
+            if not self._ok_request(fields.get("t", "")):
+                return self._send(403, "<p>This page can only be used from the program.</p>")
+            try:
+                if not files.get("update"):
+                    raise DssError("Choose an update file first.")
+                messages.append(app.install_update(files["update"]))
+            except DssError as exc:
+                problem = str(exc)
+            self.server.touch()
+            return self._send(200, app.render(self.server.token, messages, problem))
         form = parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True)
+        if self.path == "/rollback":
+            if not self._ok_request(form.get("t", [""])[0]):
+                return self._send(403, "<p>This page can only be used from the program.</p>")
+            try:
+                messages.append(app.rollback_update())
+            except DssError as exc:
+                problem = str(exc)
+            self.server.touch()
+            return self._send(200, app.render(self.server.token, messages, problem))
         if self.path not in ("/", "/email") or not self._ok_request(form.get("t", [""])[0]):
             return self._send(403, "<p>This page can only be used from the program.</p>")
         if self.path == "/email":

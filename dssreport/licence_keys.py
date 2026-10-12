@@ -14,3 +14,11 @@ program says so plainly instead of pretending.
 PUBLIC_KEYS = {
     # "2026-a": "<64 hex characters of the public key>",
 }
+
+
+# A SEPARATE key signs program updates (see docs/UPDATES.md), so a leaked licence key can't be used to
+# push code and vice versa. Same rules: public half only, empty here, private key kept by the owner
+# outside every git folder. Until it is filled in, no update package can be installed.
+UPDATE_PUBLIC_KEYS = {
+    # "2026-u": "<64 hex characters of the update public key>",
+}

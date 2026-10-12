@@ -8,4 +8,6 @@ copies only that folder) because it handles the PRIVATE signing key.
 - The real private key lives only with Jay Rohrs, outside this repository.
 - Tests generate a throw-away key in memory every run and never use a real one.
 
+`update_tool.py` builds and signs update packages (see `docs/UPDATES.md`). Use a separate key pair for updates.
+
 See `docs/LICENSING.md`.

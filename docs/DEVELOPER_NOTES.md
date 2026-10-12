@@ -47,6 +47,7 @@ CSV columns: `location, business_date (YYYY-MM-DD), sales_total, pay_<type> (any
 | `settings_server.py` (view page) | `/report` shows the saved report with "create Microsoft 365 draft" and "open in my mail app" buttons; nothing is emailed until a button is pressed |
 | `state.py` | run memory: last scheduled slot, last report folder, locations seen (used only for the Show/Hide list, never as expected locations) |
 | `licence.py`, `licence_keys.py`, `ed25519.py` | offline signed licences: format, signature check (stdlib Ed25519), status, feature flags, connection limit. `tools/` holds the signing side, outside the shipped package |
+| `updates.py` | owner-signed update files: verify, check the licence allows it, install only program files, backup and rollback. No network. `tools/update_tool.py` builds them |
 | `sources.py` | the one interface to R365 data (`DataSource`), a registry of connector kinds, mapping-format check |
 | `summary.py` | optional local-model sentence and the check that discards a wrong one |
 

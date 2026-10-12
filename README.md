@@ -90,6 +90,10 @@ Your real field mapping, R365 address and user name, Microsoft app ID and email 
 
 "Run Now" (or the schedule) makes the report. The **view page** shows it on screen with two choices: **Create an email draft in Microsoft 365** (or send it, if "send automatically" is ticked - off by default, meant for administrators using their own accounts), or **Open in my mail app** (what a phone would use). Sign-in to Microsoft is on Microsoft's own page; this program never sees or stores your Microsoft password. The report page is attached to the Microsoft 365 draft and the text is in the body. Phone viewing away from the computer is a plan only: [docs/MOBILE_PLAN.md](docs/MOBILE_PLAN.md).
 
+## Updates
+
+Updates are controlled by Jay Rohrs. The program never goes online to look for them: when an update is released to you, you are sent an update file, and you install it in settings (**Updates**). The program checks on your computer that the file is genuinely from Jay Rohrs and that your licence's update period covers it, replaces only the program files, keeps your settings, passwords, licence and reports exactly as they were, and lets you go back to the previous version. Details: [docs/UPDATES.md](docs/UPDATES.md).
+
 ## If R365 changes its API
 
 The program reaches R365 through one interface, so a connector for the new API can replace the current one without changing the checks, the report, the email or the settings. See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Nothing for the new API is built yet.
