@@ -14,15 +14,17 @@ import webbrowser
 from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable, Optional
-from urllib.parse import parse_qs, urlparse
+from pathlib import Path
+from urllib.parse import parse_qs, quote, urlparse
 
 from . import paths, scheduler
 from .config import Config, dump_rules, parse_config
 from .credstore import CredentialStore, CredentialStoreError, default_store, redact
 from .errors import DssError
-from .graph import GraphClient, scopes_for
-from .r365 import check_connection, credential_name
+from .graph import GraphClient, deliver_email, scopes_for
+from .r365 import Mapping, check_connection, credential_name
 from .runner import load_rules
+from .state import load_state, seen_locations
 from .settings import Settings, load_settings, save_settings, validate
 
 IDLE_SECONDS = 30 * 60
@@ -62,15 +64,42 @@ button.primary{background:var(--accent);color:var(--bg)}
 """
 
 
+VIEW_CSS = """
+.viewbar{border:2px solid var(--line);border-radius:10px;padding:12px 16px;margin:0 0 20px;background:var(--card)}
+.viewlead{font-weight:700;margin:0 0 8px}
+.viewbar .msg{border-radius:8px;padding:12px 14px;margin:8px 0;font-weight:600;border:2px solid var(--line)}
+.viewbar .msg.ok{background:#e7f6ec;color:#14532d;border-color:#14532d}
+.viewbar .msg.bad{background:#fdecec;color:#8a1c1c;border-color:#8a1c1c}
+.viewbar button,.viewbar .btn{font:inherit;font-weight:700;padding:12px 18px;border-radius:8px;border:2px solid #0b5cad;
+background:var(--bg);color:#0b5cad;cursor:pointer;margin:6px 8px 0 0;display:inline-block;text-decoration:none}
+.viewbar button.primary{background:#0b5cad;color:#fff}
+.viewbar .hint{color:var(--muted);font-size:1rem;margin:8px 0 0}
+"""
+
+
+def mailto_link(to: str, subject: str, body: str, limit: int = 1800) -> str:
+    """A link that opens the phone's (or computer's) own mail app with the text filled in.
+    Mail apps limit link length, so a long body is cut at a line break with a pointer to the screen."""
+    more = "\n\n(Shortened. See the full report on screen.)"
+    lines = body.splitlines()
+    for cut in range(len(lines), 0, -1):
+        text = "\n".join(lines[:cut]) + ("" if cut == len(lines) else more)
+        link = f"mailto:{quote(to, safe='@')}?subject={quote(subject, safe='')}&body={quote(text, safe='')}"
+        if len(link) <= limit:
+            return link
+    return f"mailto:{quote(to, safe='@')}?subject={quote(subject, safe='')}"
+
+
 def _checkbox(name, checked, label, hint):
     return (f'<div class="row"><label class="check"><input type="checkbox" name="{name}" value="1"'
             f'{" checked" if checked else ""}><span>{escape(label)}'
             f'<span class="hint" style="display:block;font-weight:400">{escape(hint)}</span></span></label></div>')
 
 
-def _field(name, value, label, hint, kind="text", extra=""):
+def _field(name, value, label, hint, kind="text", extra="", placeholder=""):
+    ph = f' placeholder="{escape(placeholder)}"' if placeholder else ""
     return (f'<div class="row"><label for="{name}">{escape(label)}</label>'
-            f'<input type="{kind}" id="{name}" name="{name}" value="{escape(str(value))}" {extra}>'
+            f'<input type="{kind}" id="{name}" name="{name}" value="{escape(str(value))}"{ph} {extra}>'
             f'<p class="hint">{escape(hint)}</p></div>')
 
 
@@ -125,7 +154,7 @@ class SettingsApp:
             return v
 
         raw_rules = {
-            "locations": {"include": _lines(g("locations_include")), "ignore": _lines(g("locations_ignore")),
+            "locations": {"include": _lines(g("locations_include")), "ignore": _hidden_locations(f),
                           "expected": cfg.expected},
             "rules": {
                 "missing_pos_import": {"enabled": on("rule_pos")},
@@ -211,6 +240,59 @@ class SettingsApp:
             return ["Signed out of Microsoft 365 on this computer."]
         return []
 
+    # ---------------- view the report, then choose whether to email it
+    def view_dir(self) -> Path:
+        d = load_state().get("last_report_dir")
+        return Path(d) if d else paths.reports_dir()
+
+    def _saved_report(self):
+        d = self.view_dir()
+        try:
+            return (d / "report.html").read_text(encoding="utf-8"), (d / "email.txt").read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    def email_report(self) -> str:
+        """Create the email in Microsoft 365 for the report on screen (a draft unless 'send automatically' is on)."""
+        saved = self._saved_report()
+        if not saved:
+            raise DssError("There is no report to email yet. Press 'Run now' first.")
+        html, text = saved
+        s = load_settings()
+        if not s.email_to:
+            raise DssError("Fill in who the email should go to (Email section of settings) first.")
+        subject = text.splitlines()[0].removeprefix("Subject: ")
+        body = "\n".join(text.splitlines()[2:])
+        return deliver_email(subject, body, html, s, self.store, self.graph_factory(self.store))
+
+    def render_view(self, token: str, messages=(), problem: str = "") -> str:
+        e = escape
+        saved = self._saved_report()
+        s = load_settings()
+        tools = ['<section class="viewbar"><p class="viewlead">Look it over first. Nothing has been emailed.</p>']
+        for m in messages:
+            tools.append(f'<p class="msg ok">{e(m)}</p>')
+        if problem:
+            tools.append(f'<p class="msg bad">{e(problem)}</p>')
+        if saved:
+            html, text = saved
+            subject = text.splitlines()[0].removeprefix("Subject: ")
+            body = "\n".join(text.splitlines()[2:])
+            label = ("Send it now through Microsoft 365" if s.email_send_auto
+                     else "Create an email draft in Microsoft 365")
+            tools.append(f'<form method="post" action="/email"><input type="hidden" name="t" value="{e(token)}">'
+                         f'<button class="primary" type="submit">{e(label)}</button>'
+                         f' <a class="btn" href="{e(mailto_link(s.email_to, subject, body))}">Open in my mail app</a>'
+                         ' <a class="btn" href="/?t=' + e(token) + '">Settings</a></form>')
+            tools.append('<p class="hint">Microsoft 365 puts the report page on the email as an attachment. '
+                         'A phone\'s mail app opens a new message with the text (it cannot attach the page).</p></section>')
+            return html.replace("<main>", "<main>" + "".join(tools), 1).replace("</style>", VIEW_CSS + "</style>", 1)
+        tools.append('<h1>No report yet</h1><p>Press the "Run now" shortcut to make one.</p></section>')
+        return ('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                f'<title>View the report</title><style>{CSS}{VIEW_CSS}</style></head><body><main>'
+                + "".join(tools) + '</main></body></html>')
+
     # ---------------- page
     def render(self, token: str, messages=(), problem: str = "") -> str:
         s, c = self.current()
@@ -243,9 +325,10 @@ class SettingsApp:
         out.append(_checkbox("r365_enabled", s.r365_enabled, "Connect to Restaurant365",
                              "Reads your daily sales summaries, read-only. Nothing is ever changed in R365."))
         out.append(_field("r365_base_url", s.r365_base_url, "R365 address",
-                          "The OData address your R365 contact gave you. It must start with https://."))
+                          "The OData address your R365 contact gave you. It must start with https://.",
+                          placeholder="https://your-address-from-R365"))
         out.append(_field("r365_username", s.r365_username, "User name",
-                          "The way R365 writes it: Domain\\Username."))
+                          "The way R365 writes it: Domain\\Username.", placeholder="DOMAIN\\username"))
         out.append('<div class="row"><label for="r365_password">Password</label>'
                    '<input type="password" id="r365_password" name="r365_password" autocomplete="new-password">'
                    f'<p class="hint">Kept only in this computer\'s secure store, never in a file. '
@@ -253,14 +336,32 @@ class SettingsApp:
                    'Leave blank to keep the saved one.</p></div>')
         out.append(_checkbox("r365_forget", False, "Forget the saved password", "Tick and Save to remove it from this computer."))
         out.append('<button type="submit" name="action" value="test_r365">Save and test the connection</button>')
-        out.append('<p class="hint">Which R365 fields hold each figure is set in r365_mapping.toml. '
-                   'Until that is filled in, checks show "needs mapping" in the report.</p></fieldset>')
+        try:
+            unmapped = Mapping.load(paths.mapping_path()).unmapped()
+            mapped_note = ("Field mapping: complete." if not unmapped else
+                           f"Field mapping: {len(unmapped)} item(s) not filled in, so those checks show \"needs mapping\".")
+        except DssError as exc:
+            mapped_note = f"Field mapping problem: {exc}"
+        out.append('<p class="hint">Which R365 fields hold each figure is set in your private mapping file '
+                   f'({e(str(paths.mapping_path()))}), kept on this computer and never committed anywhere. '
+                   f'<span class="state">{e(mapped_note)}</span></p></fieldset>')
 
         out.append('<fieldset><legend>2. Locations</legend>')
-        out.append(_area("locations_include", c.include, "Only these locations",
-                         "One per line, spelled as in R365. Leave empty to include every location found."))
-        out.append(_area("locations_ignore", c.ignore, "Leave these out",
-                         "One per line, for example a restaurant that has closed."))
+        out.append(_area("locations_include", c.include, "Only these locations (optional)",
+                         "One per line, spelled as in R365. A listed location that sends nothing is shown as UNKNOWN. "
+                         "A location that is not listed and sends no rows at all is not shown."))
+        shown = sorted(set(seen_locations(load_state())) | set(c.ignore), key=str.lower)
+        if shown:
+            out.append('<div class="row"><label>Show or hide a location</label>')
+            for i, name in enumerate(shown):
+                out.append(f'<label class="check"><input type="hidden" name="loc_name_{i}" value="{e(name)}">'
+                           f'<input type="checkbox" name="loc_show_{i}" value="1"{"" if name in c.ignore else " checked"}>'
+                           f'<span>{e(name)}</span></label>')
+            out.append('<p class="hint">Untick a location to leave it out of the report, for example one that has closed. '
+                       'This list fills in after the first report that reads rows from R365.</p></div>')
+        else:
+            out.append('<p class="hint">After the first report, each location it saw appears here with a '
+                       'Show/Hide tick, so a closed restaurant can be switched off.</p>')
         out.append('</fieldset>')
 
         out.append('<fieldset><legend>3. What counts as a problem</legend>')
@@ -282,12 +383,15 @@ class SettingsApp:
         out.append('<fieldset><legend>4. Email</legend>')
         out.append(_checkbox("email_enabled", s.email_enabled, "Prepare an email each time the report runs",
                              "Puts the report in your own Microsoft 365 mailbox as a draft you can read and send."))
-        out.append(_field("email_to", s.email_to, "Send to", "One email address."))
+        out.append(_field("email_to", s.email_to, "Send the email to",
+                          "Your own Microsoft 365 address (or whoever should get it). One address. You type it here; it is never built in.",
+                          placeholder="you@your-company.example"))
         out.append(_checkbox("email_send_auto", s.email_send_auto, "Send automatically",
                              "Off by default. When off, you only get a draft to check and send yourself."))
         out.append(_field("graph_client_id", s.graph_client_id, "Microsoft app ID",
-                          "The app registration ID your administrator set up (it is not a secret)."))
-        out.append(_field("graph_tenant", s.graph_tenant, "Microsoft tenant", "Leave as 'organizations' unless told otherwise."))
+                          "The Application (client) ID of the app your Microsoft 365 administrator registered. You paste it here; it is never built in.",
+                          placeholder="paste the Application (client) ID"))
+        out.append(_field("graph_tenant", s.graph_tenant, "Microsoft tenant", "Leave as 'organizations' unless your administrator gives you a tenant name.", placeholder="organizations"))
         status = ("Signed in" + (" (allowed to send)" if can_send else " (drafts only)")) if m365 else "Not signed in"
         out.append(f'<p class="hint">Microsoft 365 status: <span class="state">{e(status)}</span>. '
                    'You sign in on Microsoft\'s own page; this program never sees or stores your password.</p>')
@@ -320,6 +424,17 @@ class SettingsApp:
         out.append(f'<p class="hint">Settings file: {e(str(paths.settings_path()))}<br>Rules file: {e(str(self.rules_path))}</p>')
         out.append('</main></body></html>')
         return "\n".join(out)
+
+
+def _hidden_locations(f: dict) -> list:
+    """Every location listed on the page whose 'Show in the report' box is not ticked."""
+    hidden = []
+    for key, vals in f.items():
+        if key.startswith("loc_name_") and key[9:].isdigit():
+            idx = key[9:]
+            if f"loc_show_{idx}" not in f and vals[0].strip():
+                hidden.append(vals[0].strip())
+    return hidden
 
 
 def _lines(text: str):
@@ -356,8 +471,10 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         t = parse_qs(u.query).get("t", [""])[0]
-        if u.path != "/" or not self._ok_request(t):
+        if u.path not in ("/", "/report") or not self._ok_request(t):
             return self._send(403, "<p>This page can only be opened from the program.</p>")
+        if u.path == "/report":
+            return self._send(200, self.server.app.render_view(self.server.token))
         self._send(200, self.server.app.render(self.server.token))
 
     def do_POST(self):
@@ -365,9 +482,16 @@ class _Handler(BaseHTTPRequestHandler):
         if n > 200_000:
             return self._send(413, "<p>Too much data.</p>")
         form = parse_qs(self.rfile.read(n).decode("utf-8", "replace"), keep_blank_values=True)
-        if self.path != "/" or not self._ok_request(form.get("t", [""])[0]):
+        if self.path not in ("/", "/email") or not self._ok_request(form.get("t", [""])[0]):
             return self._send(403, "<p>This page can only be used from the program.</p>")
         app, messages, problem = self.server.app, [], ""
+        if self.path == "/email":
+            try:
+                messages.append(app.email_report())
+            except DssError as exc:
+                problem = str(exc)
+            self.server.touch()
+            return self._send(200, app.render_view(self.server.token, messages, problem))
         action = form.get("action", ["save"])[0]
         password = form.get("r365_password", [""])[0]
         try:
@@ -400,17 +524,21 @@ class SettingsServer(HTTPServer):
         self._timer.daemon = True
         self._timer.start()
 
+    def url_for(self, path: str = "/") -> str:
+        return f"http://127.0.0.1:{self.server_port}{path}?t={self.token}"
+
     @property
     def url(self) -> str:
-        return f"http://127.0.0.1:{self.server_port}/?t={self.token}"
+        return self.url_for("/")
 
 
-def serve(open_browser: bool = True, app: Optional[SettingsApp] = None) -> int:
+def serve(open_browser: bool = True, app: Optional[SettingsApp] = None, path: str = "/") -> int:
     server = SettingsServer(app or SettingsApp())
-    print(f"Settings are open in your browser. If not, open: {server.url}")
+    url = server.url_for(path)
+    print(f"This is open in your browser. If not, open: {url}")
     print("Close this window or press Ctrl+C when you are done.")
     if open_browser:
-        webbrowser.open(server.url)
+        webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

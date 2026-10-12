@@ -200,7 +200,7 @@ class Buttons(Base):
     def test_microsoft_signin_flow_with_mock(self):
         with MockGraph() as g:
             self.graph_base = g.base
-            form = {**GOOD, "email_enabled": "1", "email_to": "me@example.com", "graph_client_id": CLIENT_ID}
+            form = {**GOOD, "email_enabled": "1", "email_to": "person@example.invalid", "graph_client_id": CLIENT_ID}
             _, html = self.post({"action": "m365_start", **form})
             self.assertIn("MOCK-CODE", html)
             self.assertIn("Not signed in", html)
@@ -227,3 +227,145 @@ class Buttons(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocationToggles(Base):
+    def seed(self, names):
+        from dssreport.state import note_seen, save_state
+        save_state(note_seen({}, names))
+
+    def test_each_seen_location_has_a_show_tick_and_unticking_hides_it(self):
+        self.seed(["Demo Cafe South", "Demo Diner West"])
+        _, html = self.get()
+        self.assertRegex(html, r'name="loc_show_0" value="1" checked')
+        self.assertIn("Demo Cafe South", html)
+        # untick the first (leave out loc_show_0) and save
+        self.post({"action": "save", **GOOD, "loc_name_0": "Demo Cafe South", "loc_name_1": "Demo Diner West",
+                   "loc_show_1": "1"})
+        cfg = parse_config(tomllib.loads((self.home / "rules.toml").read_text()))
+        self.assertEqual(cfg.ignore, ["Demo Cafe South"])
+        _, html = self.get()
+        self.assertNotRegex(html, r'name="loc_show_0" value="1" checked')
+        self.assertRegex(html, r'name="loc_show_1" value="1" checked')
+        # tick it again -> shown again
+        self.post({"action": "save", **GOOD, "loc_name_0": "Demo Cafe South", "loc_name_1": "Demo Diner West",
+                   "loc_show_0": "1", "loc_show_1": "1"})
+        cfg = parse_config(tomllib.loads((self.home / "rules.toml").read_text()))
+        self.assertEqual(cfg.ignore, [])
+
+    def test_hidden_location_is_left_out_of_the_report(self):
+        from dssreport.adapters.demo import generate
+        from dssreport.report import build_report
+        recs = generate()
+        r = build_report(recs, parse_config({"locations": {"ignore": ["Demo Cafe South"]}}))
+        names = [x.name for x in r.attention + r.clear]
+        self.assertNotIn("Demo Cafe South", names)
+        self.assertEqual(len(names), 3)
+
+    def test_hidden_locations_stay_listed_so_they_can_be_switched_back_on(self):
+        self.post({"action": "save", **GOOD, "loc_name_0": "Demo Old Place"})   # not ticked -> hidden
+        _, html = self.get()
+        self.assertIn("Demo Old Place", html)
+        self.assertNotRegex(html, r'name="loc_show_0" value="1" checked')
+
+
+class NoRealIdentifiers(Base):
+    def test_page_has_only_fake_placeholders_for_ids_and_addresses(self):
+        _, html = self.get()
+        self.assertIn('placeholder="paste the Application (client) ID"', html)
+        self.assertIn('placeholder="you@your-company.example"', html)
+        self.assertNotRegex(html, r'name="graph_client_id" value="[^"]')
+        self.assertNotRegex(html, r'name="email_to" value="[^"]')
+
+    def test_mapping_status_and_private_location_are_shown(self):
+        _, html = self.get()
+        self.assertIn("never committed anywhere", html)
+        self.assertIn("needs mapping", html)
+
+
+class ViewThenEmail(Base):
+    def make_report(self):
+        from dssreport.runner import run_report
+        from dssreport.state import save_state
+        res = run_report("demo", self.home / "reports" / "r1")
+        save_state({"last_report_dir": str(res.html_path.parent)})
+        return res
+
+    def seen(self, path):
+        return self.get(f"{path}?t={self.server.token}")
+
+    def test_view_page_needs_the_token_and_shows_the_report_with_nothing_sent(self):
+        self.make_report()
+        self.assertEqual(self.get("/report")[0], 403)
+        status, html = self.seen("/report")
+        self.assertEqual(status, 200)
+        self.assertIn("Nothing has been emailed", html)
+        self.assertIn("3 of 4 locations need a look", html)
+        self.assertIn("Entry is not approved", html)
+        self.assertIn("Create an email draft in Microsoft 365", html)
+        self.assertIn("Open in my mail app", html)
+
+    def test_no_report_yet_is_a_plain_page(self):
+        status, html = self.seen("/report")
+        self.assertEqual(status, 200)
+        self.assertIn("No report yet", html)
+
+    def test_mail_app_link_is_filled_in_and_short_enough(self):
+        from dssreport.settings import Settings, save_settings
+        save_settings(Settings(email_enabled=True, email_to="person@example.invalid"))
+        self.make_report()
+        _, html = self.seen("/report")
+        link = re.search(r'href="(mailto:[^"]+)"', html).group(1)
+        self.assertTrue(link.startswith("mailto:person@example.invalid?subject="))
+        self.assertLessEqual(len(link), 1800)
+        self.assertIn("body=", link)
+
+    def test_mailto_cuts_long_bodies_at_a_line_break(self):
+        from dssreport.settings_server import mailto_link
+        body = "\n".join(f"line {i} " + "x" * 60 for i in range(100))
+        link = mailto_link("a@example.invalid", "S", body)
+        self.assertLessEqual(len(link), 1800)
+        self.assertIn("Shortened", urllib.parse.unquote(link))
+
+    def test_emailing_needs_a_click_and_creates_only_a_draft_by_default(self):
+        from dssreport.settings import Settings, save_settings
+        with MockGraph() as g:
+            self.graph_base = g.base
+            save_settings(Settings(email_enabled=True, email_to="person@example.invalid",
+                                   graph_client_id=CLIENT_ID))
+            self.make_report()
+            _, _ = self.post({"action": "m365_start", **GOOD, "email_enabled": "1",
+                              "email_to": "person@example.invalid", "graph_client_id": CLIENT_ID})
+            g.approved = True
+            self.post({"action": "m365_finish", **GOOD, "email_enabled": "1",
+                       "email_to": "person@example.invalid", "graph_client_id": CLIENT_ID})
+            self.seen("/report")
+            self.assertEqual(g.drafts, {})                      # looking is not emailing
+            req_body = urllib.parse.urlencode({"t": self.server.token}).encode()
+            with urllib.request.urlopen(urllib.request.Request(
+                    f"http://127.0.0.1:{self.port}/email", data=req_body)) as r:
+                page = htmllib.unescape(r.read().decode())
+            self.assertIn("draft addressed to person@example.invalid", page)
+            self.assertEqual(len(g.drafts), 1)
+            self.assertEqual(g.sent, [])
+            self.assertIn("3 of 4 locations", g.drafts["draft-1"]["message"]["body"]["content"])
+
+    def test_email_post_needs_the_token(self):
+        self.make_report()
+        body = urllib.parse.urlencode({"t": "wrong"}).encode()
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{self.port}/email", data=body))
+        self.assertEqual(cm.exception.code, 403)
+
+    def test_email_without_a_recipient_is_a_plain_message(self):
+        self.make_report()
+        body = urllib.parse.urlencode({"t": self.server.token}).encode()
+        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{self.port}/email", data=body)) as r:
+            self.assertIn("Fill in who the email should go to", htmllib.unescape(r.read().decode()))
+
+    def test_send_automatically_changes_the_button_label(self):
+        from dssreport.settings import Settings, save_settings
+        save_settings(Settings(email_enabled=True, email_to="person@example.invalid", email_send_auto=True))
+        self.make_report()
+        _, html = self.seen("/report")
+        self.assertIn("Send it now through Microsoft 365", html)

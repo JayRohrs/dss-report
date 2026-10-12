@@ -51,7 +51,7 @@ def validate(s: Settings) -> Settings:
     if not s.schedule_weekdays or any(d not in range(7) for d in s.schedule_weekdays):
         raise ConfigError("Pick at least one day for the schedule.")
     if s.email_to and not re.fullmatch(r"[^@\s;,]+@[^@\s;,]+\.[^@\s;,]+", s.email_to):
-        raise ConfigError("The email address doesn't look right. Use one address, like name@example.com.")
+        raise ConfigError("The email address doesn't look right. Use one address, like name@company.example.")
     if s.email_enabled and not s.email_to:
         raise ConfigError("To prepare emails, fill in who they go to.")
     if s.email_send_auto and not s.email_enabled:

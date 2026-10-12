@@ -12,7 +12,7 @@ from .mock_graph import CLIENT_ID, MockGraph
 
 
 def settings(**kw):
-    base = dict(email_enabled=True, email_to="reviewer@example.com", graph_client_id=CLIENT_ID)
+    base = dict(email_enabled=True, email_to="person@example.invalid", graph_client_id=CLIENT_ID)
     base.update(kw)
     return Settings(**base)
 
@@ -71,7 +71,7 @@ class Drafts(unittest.TestCase):
         self.assertEqual(srv.sent, [])
         draft = srv.drafts["draft-1"]
         self.assertEqual(draft["message"]["subject"], "Subject here")
-        self.assertEqual(draft["message"]["toRecipients"][0]["emailAddress"]["address"], "reviewer@example.com")
+        self.assertEqual(draft["message"]["toRecipients"][0]["emailAddress"]["address"], "person@example.invalid")
         self.assertEqual(draft["message"]["body"]["content"], "Body text")
         att = draft["attachments"][0]
         self.assertEqual(base64.b64decode(att["contentBytes"]).decode(), "<h1>page</h1>")

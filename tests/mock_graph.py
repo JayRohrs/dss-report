@@ -5,7 +5,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
-CLIENT_ID = "00000000-0000-0000-0000-00000000mock"
+CLIENT_ID = "FAKE-APP-ID-0000-NOT-REAL"
 
 
 class MockGraph(HTTPServer):

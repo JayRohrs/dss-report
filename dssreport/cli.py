@@ -56,20 +56,20 @@ def _run(args) -> int:
 
 
 def _run_now() -> int:
-    import webbrowser
     from datetime import timedelta
     from .paths import reports_dir
-    from .settings import load_settings
+    from .settings_server import serve
+    from .state import load_state, save_state
     day = date.today() - timedelta(days=1)
-    result = run_report("r365", reports_dir() / day.isoformat(), end=day,
-                        email=load_settings().email_enabled)
+    # No email is created here: the person looks at the report first, then chooses (see the page).
+    result = run_report("r365", reports_dir() / day.isoformat(), end=day, email=False)
     for note in result.notes:
         print(note, file=sys.stderr)
     print(result.report.headline)
-    if result.email_outcome:
-        print(result.email_outcome)
-    webbrowser.open(result.html_path.as_uri())
-    return 0
+    state = load_state()
+    state["last_report_dir"] = str(result.html_path.parent)
+    save_state(state)
+    return serve(path="/report")
 
 
 def _forget() -> int:

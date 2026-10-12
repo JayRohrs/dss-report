@@ -93,6 +93,7 @@ def scheduled_run(settings: Settings, now: Optional[datetime] = None, input_spec
         save_state(state)
         log(f"FAILED for {day}: {exc}", now)
         return f"The scheduled report could not be made: {exc}"
+    state["last_report_dir"] = str(reports_dir() / day.isoformat())
     state["last_slot"] = d.slot.isoformat()
     state["last_run_at"] = now.isoformat(timespec="minutes")
     state["last_headline"] = result.report.headline
