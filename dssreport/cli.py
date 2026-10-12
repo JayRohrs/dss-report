@@ -31,6 +31,8 @@ def _parser():
     run.add_argument("--email", action="store_true", help="also create the email in Microsoft 365 (uses your settings)")
     sub.add_parser("settings", help="open the settings screen in your browser")
     sub.add_parser("scheduled-run", help="what the schedule runs (does nothing if not due)")
+    sub.add_parser("run-now", help="run the R365 report for yesterday now and open it")
+    sub.add_parser("forget-secrets", help="remove the saved R365 password and Microsoft 365 sign-in from this computer")
     sch = sub.add_parser("schedule", help="turn the Windows schedule on or off")
     sch.add_argument("action", choices=["install", "remove"])
     r365 = sub.add_parser("r365", help="read-only helpers for the R365 connection")
@@ -50,6 +52,36 @@ def _run(args) -> int:
     print(f"Wrote {result.html_path} and {result.text_path}")
     if result.email_outcome:
         print(result.email_outcome)
+    return 0
+
+
+def _run_now() -> int:
+    import webbrowser
+    from datetime import timedelta
+    from .paths import reports_dir
+    from .settings import load_settings
+    day = date.today() - timedelta(days=1)
+    result = run_report("r365", reports_dir() / day.isoformat(), end=day,
+                        email=load_settings().email_enabled)
+    for note in result.notes:
+        print(note, file=sys.stderr)
+    print(result.report.headline)
+    if result.email_outcome:
+        print(result.email_outcome)
+    webbrowser.open(result.html_path.as_uri())
+    return 0
+
+
+def _forget() -> int:
+    from .credstore import default_store
+    from .graph import SESSION_KEY
+    from .r365 import credential_name
+    from .settings import load_settings
+    store, s = default_store(), load_settings()
+    if s.r365_username:
+        store.delete(credential_name(s.r365_username))
+    store.delete(SESSION_KEY)
+    print("Saved passwords and sign-ins were removed from this computer.")
     return 0
 
 
@@ -82,6 +114,10 @@ def main(argv=None) -> int:
             from .settings import load_settings
             print(scheduled_run(load_settings()))
             return 0
+        if args.command == "run-now":
+            return _run_now()
+        if args.command == "forget-secrets":
+            return _forget()
         if args.command == "schedule":
             from . import scheduler
             from .settings import load_settings
