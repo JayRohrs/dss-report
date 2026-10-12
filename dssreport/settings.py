@@ -12,8 +12,6 @@ from .errors import ConfigError
 from .paths import app_dir, settings_path
 
 LOOPBACK = {"localhost", "127.0.0.1", "::1"}
-#: the kinds of R365 data source this program knows (kept in step with sources.SOURCE_KINDS by a test)
-SOURCE_KINDS = ("odata",)
 _ID = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 
 
@@ -101,6 +99,8 @@ def validate(s: Settings) -> Settings:
         if i.name.strip().lower() in names:
             raise ConfigError(f"Two connections are both called '{i.name}'. Give each its own name.")
         names.add(i.name.strip().lower())
+        from . import r365  # noqa: F401  (registers the built-in connector)
+        from .sources import SOURCE_KINDS
         if i.source_kind not in SOURCE_KINDS:
             raise ConfigError(f"Connection '{i.name}': this program does not know the data source '{i.source_kind}'.")
         if i.base_url and not is_safe_url(i.base_url):

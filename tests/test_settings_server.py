@@ -561,3 +561,13 @@ class NoLicence(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VersionVsUpdates(Base):
+    def test_version_inside_or_after_the_updates_period_is_stated_plainly(self):
+        self.upload_licence(H.make(updates_until=date(2099, 1, 1)))
+        _, html = self.get()
+        self.assertIn("inside your updates period", html)
+        self.upload_licence(H.make(updates_until=date(2020, 1, 1)))
+        _, html = self.get()
+        self.assertIn("newer than your updates period (it still runs", html)

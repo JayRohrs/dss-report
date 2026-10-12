@@ -17,7 +17,9 @@ from typing import Callable, Optional
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import paths, scheduler
+from datetime import date
+
+from . import __release_date__, paths, scheduler
 from .config import Config, dump_rules, parse_config
 from .credstore import CredentialStore, CredentialStoreError, default_store, redact
 from .errors import DssError
@@ -416,6 +418,9 @@ class SettingsApp:
             rows = [("Customer", L.customer),
                     ("Connections", f"{used} used of {L.instances} allowed" + (" (over the limit)" if used > L.instances else "")),
                     ("Licence ends", L.expires.isoformat()), ("Updates until", L.updates_until.isoformat()),
+                    ("This version", f"released {__release_date__}, " + (
+                        "inside your updates period" if status.updates_covered(date.fromisoformat(__release_date__))
+                        else "newer than your updates period (it still runs; ask about renewing)")),
                     ("Includes", ", ".join(lic.FEATURE_WORDS[f] for f in lic.ALL_FEATURES if f in L.features) or "Nothing extra")]
         else:
             rows = [("Connections", f"{used} set up, {status.instances_allowed} allowed")]
