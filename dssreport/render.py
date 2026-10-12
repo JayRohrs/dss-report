@@ -1,0 +1,113 @@
+"""Writes the self-contained HTML page and the plain-text email body."""
+
+import textwrap
+from html import escape
+
+from .report import NEEDS_REVIEW, Report, date_label, reasons
+
+SOURCE_NOTE = {
+    "model": "Summary sentence written by a local model and checked against the numbers.",
+    "template": "Standard summary sentence (the local model was unavailable or disagreed with the numbers).",
+}
+
+CSS = """
+:root{--bg:#fff;--fg:#1b1f23;--muted:#4a5560;--line:#c9d1d9;--card:#f4f6f8;
+--bad:#8a1c1c;--badbg:#fdecec;--unk:#6b4a00;--unkbg:#fff4d6;--ok:#14532d;--okbg:#e7f6ec}
+@media (prefers-color-scheme:dark){:root{--bg:#14181c;--fg:#eef1f4;--muted:#b3bdc7;--line:#3a444e;
+--card:#1e242a;--bad:#ffb4b4;--badbg:#3b1b1b;--unk:#ffd88a;--unkbg:#3a2f12;--ok:#9fe3b6;--okbg:#14301e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:19px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+main{max-width:960px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.5rem;margin:0 0 4px}
+h2{font-size:1.3rem;margin:32px 0 12px}
+.date{color:var(--muted);margin:0 0 16px}
+.headline{font-size:1.35rem;font-weight:700;line-height:1.4;background:var(--card);
+border:2px solid var(--line);border-radius:10px;padding:16px;margin:0 0 12px}
+.summary{margin:0 0 8px}
+.note{color:var(--muted);font-size:1rem;margin:0 0 8px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--line)}
+th{font-size:1rem;color:var(--muted)}
+td.loc{font-weight:700}
+.badge{display:inline-block;font-weight:700;font-size:1rem;padding:2px 10px;border-radius:6px;border:2px solid;white-space:nowrap}
+.badge.review{color:var(--bad);background:var(--badbg);border-color:var(--bad)}
+.badge.unknown{color:var(--unk);background:var(--unkbg);border-color:var(--unk);border-style:dashed}
+ul{margin:0;padding-left:1.2em}
+li{margin:2px 0}
+.clear li{list-style:none;margin:6px 0;padding:10px 12px;background:var(--okbg);color:var(--ok);
+border-radius:8px;font-weight:700}
+.empty{color:var(--muted)}
+footer{margin-top:36px;color:var(--muted);font-size:1rem;border-top:1px solid var(--line);padding-top:12px}
+footer ul{padding-left:1.2em}
+@media (max-width:640px){
+body{font-size:19px}
+table,thead,tbody,tr,td{display:block;width:100%}
+thead{position:absolute;left:-9999px}
+tr{border:2px solid var(--line);border-radius:10px;margin:0 0 14px;padding:4px 0;background:var(--card)}
+td{border:0;padding:6px 14px}
+td[data-label]::before{content:attr(data-label);display:block;font-size:1rem;color:var(--muted)}
+}
+"""
+
+
+def render_html(report: Report) -> str:
+    e = escape
+    out = ['<!DOCTYPE html>', '<html lang="en"><head><meta charset="utf-8">',
+           '<meta name="viewport" content="width=device-width, initial-scale=1">',
+           f'<title>{e(report.title)} - {e(date_label(report.dates))}</title>',
+           f'<style>{CSS}</style></head><body><main>',
+           f'<h1>{e(report.title)}</h1>',
+           f'<p class="date">{e(date_label(report.dates))}</p>',
+           f'<p class="headline">{e(report.headline)}</p>']
+    if report.summary_sentence:
+        out.append(f'<p class="summary">{e(report.summary_sentence)}</p>')
+        out.append(f'<p class="note">{e(SOURCE_NOTE[report.summary_source])}</p>')
+
+    out.append('<h2>Needs a look</h2>')
+    if report.attention:
+        out.append('<table><thead><tr><th>Location</th><th>Status</th><th>Why</th></tr></thead><tbody>')
+        for r in report.attention:
+            cls = "review" if r.status == NEEDS_REVIEW else "unknown"
+            items = "".join(f"<li>{e(t)}</li>" for t in reasons(r, report.multi_day))
+            out.append(f'<tr><td class="loc" data-label="Location">{e(r.name)}</td>'
+                       f'<td data-label="Status"><span class="badge {cls}">{e(r.status)}</span></td>'
+                       f'<td data-label="Why"><ul>{items}</ul></td></tr>')
+        out.append('</tbody></table>')
+    else:
+        out.append('<p class="empty">No location needs a look.</p>')
+
+    out.append('<h2>Nothing to review</h2>')
+    if report.clear:
+        out.append('<ul class="clear">' + "".join(f"<li>{e(r.name)}</li>" for r in report.clear) + '</ul>')
+    else:
+        out.append('<p class="empty">None.</p>')
+
+    out.append('<footer><p>How this was decided (edit rules.toml to change):</p><ul>'
+               + "".join(f"<li>{e(t)}</li>" for t in report.rules_note) + '</ul>')
+    out.append(f'<p>Data source: {e(report.source_name)}. Made by a computer program from the '
+               'figures above, not from anyone\'s judgement. Nothing was sent anywhere.</p></footer>')
+    out.append('</main></body></html>')
+    return "\n".join(out) + "\n"
+
+
+def render_text(report: Report) -> str:
+    wrap = lambda s, ind="": textwrap.fill(s, 76, initial_indent=ind, subsequent_indent=ind + "  ")
+    lines = [f"Subject: {report.title} - {date_label(report.dates)}: "
+             + (f"{len(report.attention)} of {report.total} locations need a look"
+                if report.attention else
+                ("nothing to review" if report.total else "no data (UNKNOWN)")),
+             "", wrap(report.headline)]
+    if report.summary_sentence:
+        lines += ["", wrap(report.summary_sentence)]
+    lines += ["", "NEEDS A LOOK", "------------"]
+    if report.attention:
+        for r in report.attention:
+            lines.append(f"* {r.name} [{r.status}]")
+            lines += [wrap(t, "    - ") for t in reasons(r, report.multi_day)]
+    else:
+        lines.append("No location needs a look.")
+    lines += ["", "NOTHING TO REVIEW", "-----------------"]
+    lines += [f"* {r.name}" for r in report.clear] or ["None."]
+    lines += ["", "How this was decided:"] + [wrap(t, "  - ") for t in report.rules_note]
+    lines += ["", f"Data source: {report.source_name}. Made by a computer program; nothing was sent anywhere."]
+    return "\n".join(lines) + "\n"

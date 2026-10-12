@@ -1,0 +1,33 @@
+# Never commit real data. Keep real files in these folders (or anywhere outside the repo).
+/data/
+/private/
+/real-data/
+/real_data/
+/input/
+/inbox/
+/exports/
+
+# Generated reports (they contain figures)
+/out/
+/output/
+
+# Data files are ignored everywhere except the made-up demo and test data.
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.json
+!/examples/**
+!/tests/fixtures/**
+
+# Secrets and local settings
+.env
+.env.*
+*.key
+*.pem
+rules.local.toml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
