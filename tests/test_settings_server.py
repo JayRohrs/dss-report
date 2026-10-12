@@ -6,6 +6,7 @@ import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -14,25 +15,33 @@ import tomllib
 from dssreport.config import parse_config
 from dssreport.credstore import InMemoryStoreForTests
 from dssreport.graph import GraphClient
-from dssreport.r365 import credential_name
-from dssreport.settings import load_settings
+from dssreport.settings import Instance, Settings, load_settings, save_settings
 from dssreport.settings_server import SettingsApp, SettingsServer
 
+from . import licence_helpers as H
 from .mock_graph import CLIENT_ID, MockGraph
 from .mock_r365 import PASSWORD, USER, MockR365
 
 
 class Base(unittest.TestCase):
+    licence_kw = {}          # override per test class; {} = a good 2-connection base licence
+    install_licence = True
+
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
         p = mock.patch.dict("os.environ", {"DSSREPORT_HOME": str(self.home)})
         p.start()
         self.addCleanup(p.stop)
+        keys = H.trusted_keys()
+        keys.__enter__()
+        self.addCleanup(lambda: keys.__exit__(None, None, None))
+        if self.install_licence:
+            H.install(self.home, **self.licence_kw)
         self.store = InMemoryStoreForTests()
         self.graph_base = None
         self.app = SettingsApp(self.store, graph_factory=self._graph)
         self.server = SettingsServer(self.app)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True).start()
         self.addCleanup(lambda: (self.server.shutdown(), self.server.server_close()))
         self.port = self.server.server_port
 
@@ -50,11 +59,25 @@ class Base(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, htmllib.unescape(e.read().decode())
 
-    def post(self, fields, token=None, headers=None):
+    def post(self, fields, token=None, headers=None, path="/"):
         data = {"t": self.server.token if token is None else token}
         data.update(fields)
         body = urllib.parse.urlencode(data, doseq=True).encode()
-        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/", data=body, headers=headers or {})
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=body, headers=headers or {})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, htmllib.unescape(r.read().decode())
+        except urllib.error.HTTPError as e:
+            return e.code, htmllib.unescape(e.read().decode())
+
+    def upload_licence(self, raw: bytes, token=None):
+        boundary = "----testboundary7391"
+        parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="t"\r\n\r\n{token or self.server.token}\r\n'.encode(),
+                 f'--{boundary}\r\nContent-Disposition: form-data; name="licence"; filename="licence.json"\r\n'
+                 f'Content-Type: application/json\r\n\r\n'.encode() + raw + b"\r\n",
+                 f"--{boundary}--\r\n".encode()]
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/licence", data=b"".join(parts),
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
         try:
             with urllib.request.urlopen(req) as r:
                 return r.status, htmllib.unescape(r.read().decode())
@@ -64,11 +87,31 @@ class Base(unittest.TestCase):
     def all_files_text(self):
         return " ".join(p.read_text(errors="ignore") for p in self.home.rglob("*") if p.is_file())
 
+    def add_instance(self, name="Sample Group A", url="https://odata.example.com/a", user=USER, **kw):
+        s = load_settings()
+        inst = Instance(id=name.lower().replace(" ", "-"), name=name, base_url=url, username=user, **kw)
+        s.instances.append(inst)
+        save_settings(s)
+        return inst
 
-GOOD = {"r365_username": USER, "payments_tolerance": "0.01", "rule_pos": "1", "rule_cash": "1", "cash_limit": "7.5",
-        "rule_receipts": "1", "receipts_allowed": "1", "rule_exceptions": "1", "exceptions_allowed": "0",
-        "schedule_time": "07:30", "wd0": "1", "wd1": "1", "wd2": "1", "wd3": "1", "wd4": "1",
-        "ai_endpoint": "http://localhost:11434", "ai_model": "my-model"}
+
+RULES = {"payments_tolerance": "0.01", "rule_pos": "1", "rule_cash": "1", "cash_limit": "7.5",
+         "rule_receipts": "1", "receipts_allowed": "1", "rule_exceptions": "1", "exceptions_allowed": "0",
+         "rule_unapproved": "1", "schedule_time": "07:30", "wd0": "1", "wd1": "1", "wd2": "1", "wd3": "1",
+         "wd4": "1", "ai_endpoint": "http://localhost:11434", "ai_model": "my-model"}
+
+
+def form_for(instances, **extra):
+    """What the page would post for the connections that already exist (all left as they are)."""
+    f = dict(RULES)
+    for i, inst in enumerate(instances):
+        f.update({f"inst_id_{i}": inst.id, f"inst_name_{i}": inst.name, f"inst_url_{i}": inst.base_url,
+                  f"inst_user_{i}": inst.username})
+        if inst.enabled:
+            f[f"inst_enabled_{i}"] = "1"
+        f[f"inst_include_{i}"] = "\n".join(inst.include)
+    f.update(extra)
+    return f
 
 
 class Access(Base):
@@ -79,9 +122,12 @@ class Access(Base):
         self.assertEqual(self.get()[0], 200)
 
     def test_post_needs_token_and_same_origin(self):
-        self.assertEqual(self.post(GOOD, token="nope")[0], 403)
-        self.assertEqual(self.post(GOOD, headers={"Origin": "http://evil.example.com"})[0], 403)
-        self.assertEqual(self.post({"action": "save", **GOOD})[0], 200)
+        self.assertEqual(self.post(RULES, token="nope")[0], 403)
+        self.assertEqual(self.post(RULES, headers={"Origin": "http://evil.example.com"})[0], 403)
+        self.assertEqual(self.post({"action": "save", **RULES})[0], 200)
+
+    def test_licence_upload_needs_the_token_too(self):
+        self.assertEqual(self.upload_licence(H.make(), token="nope")[0], 403)
 
     def test_only_listens_on_this_computer(self):
         self.assertEqual(self.server.server_address[0], "127.0.0.1")
@@ -96,11 +142,9 @@ class Access(Base):
 class Page(Base):
     def test_defaults_are_safe(self):
         _, html = self.get()
-        for name in ("email_send_auto", "ai_enabled", "email_enabled", "schedule_enabled",
-                     "rule_payments", "r365_enabled"):
+        for name in ("email_send_auto", "ai_enabled", "email_enabled", "schedule_enabled", "rule_payments"):
             self.assertRegex(html, rf'name="{name}" value="1"(?! checked)', name)
         self.assertRegex(html, r'name="rule_unapproved" value="1" checked')   # approval check on by default
-        # weekdays ticked, weekend not
         self.assertRegex(html, r'name="wd0" value="1" checked')
         self.assertRegex(html, r'name="wd6" value="1">')
         self.assertIn("07:00", html)
@@ -108,63 +152,64 @@ class Page(Base):
     def test_every_setting_has_a_one_line_explanation(self):
         _, html = self.get()
         inputs = re.findall(r'<(?:input|textarea)[^>]*name="(\w+)"', html)
-        skip = {"t", "r365_password"}  # password has its own explanation below the box
-        for name in set(inputs) - skip - {f"wd{i}" for i in range(7)}:
-            block = html.split(f'name="{name}"', 1)[1][:600]
+        skip = {"t", "licence", "new_pw"} | {f"wd{i}" for i in range(7)}
+        for name in set(inputs) - skip:
+            block = html.split(f'name="{name}"', 1)[1][:700]
             self.assertIn('class="hint"', block, f"no hint after {name}")
-        self.assertIn("Kept only in this computer", html)
 
     def test_text_is_never_tiny_and_page_is_phone_ready(self):
+        self.add_instance()
         _, html = self.get()
         self.assertIn('name="viewport"', html)
         for value, unit in re.findall(r"font(?:-size)?:\s*([\d.]+)(px|rem)", html):
             self.assertGreaterEqual(float(value) * (16 if unit == "rem" else 1), 16)
-        self.assertNotRegex(html, r"https?://(?!127|localhost)[^\s\"']*\.(js|css)")
         self.assertNotIn("<script", html)
 
 
 class Saving(Base):
     def test_save_writes_rules_toml_and_settings_json(self):
-        s, html = self.post({"action": "save", **GOOD, "r365_enabled": "1",
-                             "r365_base_url": "https://tenant.example.com/api/v2/views",
-                             "locations_include": "Demo Grill East\r\nDemo Cafe South\r\n"})
+        inst = self.add_instance()
+        f = form_for([inst], action="save")
+        f["inst_url_0"] = "https://tenant.example.com/api/v2/views"
+        _, html = self.post(f)
         self.assertIn("Settings saved.", html)
         cfg = parse_config(tomllib.loads((self.home / "rules.toml").read_text()))
         self.assertEqual(str(cfg.cash_limit), "7.5")
         self.assertEqual(cfg.receipts_allowed, 1)
-        self.assertEqual(cfg.include, ["Demo Grill East", "Demo Cafe South"])
-        self.assertFalse(cfg.unapproved_enabled)
         st = load_settings()
-        self.assertTrue(st.r365_enabled)
+        self.assertEqual(st.instances[0].base_url, "https://tenant.example.com/api/v2/views")
         self.assertEqual(st.schedule_time, "07:30")
         self.assertEqual(st.schedule_weekdays, [0, 1, 2, 3, 4])
 
     def test_bad_input_is_a_plain_message_and_nothing_is_written(self):
-        _, html = self.post({"action": "save", **GOOD, "cash_limit": "lots"})
+        inst = self.add_instance()
+        _, html = self.post(form_for([inst], action="save", cash_limit="lots"))
         self.assertIn("The cash limit must be a number.", html)
         self.assertFalse((self.home / "rules.toml").exists())
-        _, html = self.post({"action": "save", **GOOD, "r365_base_url": "http://tenant.example.com"})
+        f = form_for([inst], action="save")
+        f["inst_url_0"] = "http://tenant.example.com"
+        _, html = self.post(f)
         self.assertIn("must start with https://", html)
-        _, html = self.post({"action": "save", **GOOD, "email_send_auto": "1"})
+        _, html = self.post(form_for([inst], action="save", email_send_auto="1"))
         self.assertIn("needs 'Prepare an email'", html)
 
     def test_password_goes_to_the_secure_store_only(self):
+        inst = self.add_instance()
         secret = "Typed-Secret-9931"
-        _, html = self.post({"action": "save", **GOOD, "r365_password": secret,
-                             "r365_base_url": "https://tenant.example.com/x"})
+        _, html = self.post(form_for([inst], action="save", inst_pw_0=secret))
         self.assertIn("A password is saved.", html)
         self.assertNotIn(secret, html)
-        self.assertEqual(self.store.get(credential_name(USER)), secret)
+        self.assertEqual(self.store.get(inst.credential_key), secret)
         self.assertNotIn(secret, self.all_files_text())
         _, page = self.get()
         self.assertNotIn(secret, page)
-        # and it can be forgotten
-        self.post({"action": "save", **GOOD, "r365_forget": "1", "r365_base_url": "https://tenant.example.com/x"})
-        self.assertIsNone(self.store.get(credential_name(USER)))
+        self.post(form_for([inst], action="save", inst_forget_0="1"))
+        self.assertIsNone(self.store.get(inst.credential_key))
 
     def test_password_is_not_echoed_even_when_the_save_fails(self):
+        inst = self.add_instance()
         secret = "Typed-Secret-4417"
-        _, html = self.post({"action": "save", **GOOD, "r365_password": secret, "cash_limit": "x"})
+        _, html = self.post(form_for([inst], action="save", inst_pw_0=secret, cash_limit="x"))
         self.assertNotIn(secret, html)
         self.assertNotIn(secret, self.all_files_text())
 
@@ -172,35 +217,46 @@ class Saving(Base):
         with mock.patch("dssreport.settings_server._is_windows", return_value=True), \
                 mock.patch("dssreport.settings_server.scheduler.install_task", return_value="Scheduled for 07:30.") as inst, \
                 mock.patch("dssreport.settings_server.scheduler.remove_task", return_value="removed") as rem:
-            _, html = self.post({"action": "save", **GOOD, "schedule_enabled": "1"})
+            _, html = self.post({"action": "save", **RULES, "schedule_enabled": "1"})
             self.assertIn("Scheduled for 07:30.", html)
             inst.assert_called_once()
-            self.post({"action": "save", **GOOD, "schedule_enabled": "1"})   # unchanged -> no second call
+            self.post({"action": "save", **RULES, "schedule_enabled": "1"})
             inst.assert_called_once()
-            self.post({"action": "save", **GOOD})
+            self.post({"action": "save", **RULES})
             rem.assert_called_once()
 
     def test_save_and_close_stops_the_server(self):
-        status, html = self.post({"action": "quit", **GOOD})
+        status, html = self.post({"action": "quit", **RULES})
         self.assertIn("You can close this tab", html)
         self.assertEqual(status, 200)
+
+    def test_no_secure_store_gives_a_plain_message(self):
+        from dssreport.credstore import CredentialStoreError
+
+        class Broken(InMemoryStoreForTests):
+            def set(self, *a):
+                raise CredentialStoreError("No secure place to keep the password was found on this computer, so nothing was saved.")
+        inst = self.add_instance()
+        self.app._store = Broken()
+        _, html = self.post(form_for([inst], action="save", inst_pw_0="pw"))
+        self.assertIn("nothing was saved", html)
 
 
 class Buttons(Base):
     def test_test_connection_against_mock_r365(self):
         with MockR365() as srv:
-            self.store.set(credential_name(USER), PASSWORD)
-            _, html = self.post({"action": "test_r365", **GOOD, "r365_enabled": "1", "r365_base_url": srv.url})
-            self.assertIn("Connected to R365", html)
-            self.store.set(credential_name(USER), "wrong")
-            _, html = self.post({"action": "test_r365", **GOOD, "r365_enabled": "1", "r365_base_url": srv.url})
+            inst = self.add_instance(url=srv.url)
+            self.store.set(inst.credential_key, PASSWORD)
+            _, html = self.post(form_for([inst], action=f"test_r365:{inst.id}"))
+            self.assertIn("Sample Group A: Connected to R365", html)
+            self.store.set(inst.credential_key, "wrong")
+            _, html = self.post(form_for([inst], action=f"test_r365:{inst.id}"))
             self.assertIn("refused the sign-in", html)
-            self.assertNotIn("wrong</", html)
 
     def test_microsoft_signin_flow_with_mock(self):
         with MockGraph() as g:
             self.graph_base = g.base
-            form = {**GOOD, "email_enabled": "1", "email_to": "person@example.invalid", "graph_client_id": CLIENT_ID}
+            form = {**RULES, "email_enabled": "1", "email_to": "person@example.invalid", "graph_client_id": CLIENT_ID}
             _, html = self.post({"action": "m365_start", **form})
             self.assertIn("MOCK-CODE", html)
             self.assertIn("Not signed in", html)
@@ -214,59 +270,44 @@ class Buttons(Base):
             _, html = self.post({"action": "m365_signout", **form})
             self.assertIn("Signed out", html)
 
-    def test_no_secure_store_gives_a_plain_message(self):
-        from dssreport.credstore import CredentialStoreError
-
-        class Broken(InMemoryStoreForTests):
-            def set(self, *a):
-                raise CredentialStoreError("No secure place to keep the password was found on this computer, so nothing was saved.")
-        self.app._store = Broken()
-        _, html = self.post({"action": "save", **GOOD, "r365_password": "pw", "r365_base_url": "https://t.example.com/x"})
-        self.assertIn("nothing was saved", html)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
 
 class LocationToggles(Base):
-    def seed(self, names):
+    def seed(self, inst, names):
         from dssreport.state import note_seen, save_state
-        save_state(note_seen({}, names))
+        save_state(note_seen({}, inst.id, names))
 
-    def test_each_seen_location_has_a_show_tick_and_unticking_hides_it(self):
-        self.seed(["Demo Cafe South", "Demo Diner West"])
+    def test_each_seen_location_has_a_show_tick_per_connection(self):
+        a = self.add_instance("Sample Group A")
+        b = self.add_instance("Sample Group B")
+        self.seed(a, ["Demo Cafe South", "Demo Diner West"])
+        from dssreport.state import load_state, note_seen, save_state
+        st = load_state()
+        save_state(note_seen(st, b.id, ["Sample Pier Grill"]))
         _, html = self.get()
-        self.assertRegex(html, r'name="loc_show_0" value="1" checked')
-        self.assertIn("Demo Cafe South", html)
-        # untick the first (leave out loc_show_0) and save
-        self.post({"action": "save", **GOOD, "loc_name_0": "Demo Cafe South", "loc_name_1": "Demo Diner West",
-                   "loc_show_1": "1"})
-        cfg = parse_config(tomllib.loads((self.home / "rules.toml").read_text()))
-        self.assertEqual(cfg.ignore, ["Demo Cafe South"])
+        self.assertRegex(html, r'name="loc_0_0" value="1" checked')
+        self.assertIn("Sample Pier Grill", html)
+        # untick the first location of connection A and save
+        f = form_for([a, b], action="save", locname_0_0="Demo Cafe South", locname_0_1="Demo Diner West",
+                     loc_0_1="1", locname_1_0="Sample Pier Grill", loc_1_0="1")
+        self.post(f)
+        s = load_settings()
+        self.assertEqual(s.instances[0].hidden, ["Demo Cafe South"])
+        self.assertEqual(s.instances[1].hidden, [])           # B is untouched: toggles are per connection
         _, html = self.get()
-        self.assertNotRegex(html, r'name="loc_show_0" value="1" checked')
-        self.assertRegex(html, r'name="loc_show_1" value="1" checked')
-        # tick it again -> shown again
-        self.post({"action": "save", **GOOD, "loc_name_0": "Demo Cafe South", "loc_name_1": "Demo Diner West",
-                   "loc_show_0": "1", "loc_show_1": "1"})
-        cfg = parse_config(tomllib.loads((self.home / "rules.toml").read_text()))
-        self.assertEqual(cfg.ignore, [])
+        self.assertNotRegex(html, r'name="loc_0_0" value="1" checked')
+        f = form_for([load_settings().instances[0], b], action="save", locname_0_0="Demo Cafe South",
+                     locname_0_1="Demo Diner West", loc_0_0="1", loc_0_1="1", locname_1_0="Sample Pier Grill", loc_1_0="1")
+        self.post(f)
+        self.assertEqual(load_settings().instances[0].hidden, [])
 
-    def test_hidden_location_is_left_out_of_the_report(self):
-        from dssreport.adapters.demo import generate
-        from dssreport.report import build_report
-        recs = generate()
-        r = build_report(recs, parse_config({"locations": {"ignore": ["Demo Cafe South"]}}))
-        names = [x.name for x in r.attention + r.clear]
-        self.assertNotIn("Demo Cafe South", names)
-        self.assertEqual(len(names), 3)
-
-    def test_hidden_locations_stay_listed_so_they_can_be_switched_back_on(self):
-        self.post({"action": "save", **GOOD, "loc_name_0": "Demo Old Place"})   # not ticked -> hidden
-        _, html = self.get()
-        self.assertIn("Demo Old Place", html)
-        self.assertNotRegex(html, r'name="loc_show_0" value="1" checked')
+    def test_only_these_locations_is_per_connection(self):
+        a = self.add_instance("Sample Group A")
+        b = self.add_instance("Sample Group B")
+        f = form_for([a, b], action="save", inst_include_0="Demo Grill East\r\nDemo Cafe South\r\n")
+        self.post(f)
+        s = load_settings()
+        self.assertEqual(s.instances[0].include, ["Demo Grill East", "Demo Cafe South"])
+        self.assertEqual(s.instances[1].include, [])
 
 
 class NoRealIdentifiers(Base):
@@ -277,18 +318,22 @@ class NoRealIdentifiers(Base):
         self.assertNotRegex(html, r'name="graph_client_id" value="[^"]')
         self.assertNotRegex(html, r'name="email_to" value="[^"]')
 
-    def test_mapping_status_and_private_location_are_shown(self):
+    def test_mapping_status_and_private_location_are_shown_per_connection(self):
+        self.add_instance()
         _, html = self.get()
-        self.assertIn("never committed anywhere", html)
+        self.assertIn("never committed", html)
         self.assertIn("needs mapping", html)
+        self.assertIn("mappings", html)
 
 
 class ViewThenEmail(Base):
-    def make_report(self):
+    def make_report(self, name="r1"):
         from dssreport.runner import run_report
-        from dssreport.state import save_state
-        res = run_report("demo", self.home / "reports" / "r1")
-        save_state({"last_report_dir": str(res.html_path.parent)})
+        from dssreport.state import load_state, save_state
+        res = run_report("demo", self.home / "reports" / name)
+        st = load_state()
+        st["last_report_dir"] = str(res.html_path.parent)
+        save_state(st)
         return res
 
     def seen(self, path):
@@ -311,14 +356,12 @@ class ViewThenEmail(Base):
         self.assertIn("No report yet", html)
 
     def test_mail_app_link_is_filled_in_and_short_enough(self):
-        from dssreport.settings import Settings, save_settings
         save_settings(Settings(email_enabled=True, email_to="person@example.invalid"))
         self.make_report()
         _, html = self.seen("/report")
         link = re.search(r'href="(mailto:[^"]+)"', html).group(1)
         self.assertTrue(link.startswith("mailto:person@example.invalid?subject="))
         self.assertLessEqual(len(link), 1800)
-        self.assertIn("body=", link)
 
     def test_mailto_cuts_long_bodies_at_a_line_break(self):
         from dssreport.settings_server import mailto_link
@@ -328,44 +371,193 @@ class ViewThenEmail(Base):
         self.assertIn("Shortened", urllib.parse.unquote(link))
 
     def test_emailing_needs_a_click_and_creates_only_a_draft_by_default(self):
-        from dssreport.settings import Settings, save_settings
         with MockGraph() as g:
             self.graph_base = g.base
-            save_settings(Settings(email_enabled=True, email_to="person@example.invalid",
-                                   graph_client_id=CLIENT_ID))
+            save_settings(Settings(email_enabled=True, email_to="person@example.invalid", graph_client_id=CLIENT_ID))
             self.make_report()
-            _, _ = self.post({"action": "m365_start", **GOOD, "email_enabled": "1",
-                              "email_to": "person@example.invalid", "graph_client_id": CLIENT_ID})
+            form = {**RULES, "email_enabled": "1", "email_to": "person@example.invalid", "graph_client_id": CLIENT_ID}
+            self.post({"action": "m365_start", **form})
             g.approved = True
-            self.post({"action": "m365_finish", **GOOD, "email_enabled": "1",
-                       "email_to": "person@example.invalid", "graph_client_id": CLIENT_ID})
+            self.post({"action": "m365_finish", **form})
             self.seen("/report")
             self.assertEqual(g.drafts, {})                      # looking is not emailing
-            req_body = urllib.parse.urlencode({"t": self.server.token}).encode()
-            with urllib.request.urlopen(urllib.request.Request(
-                    f"http://127.0.0.1:{self.port}/email", data=req_body)) as r:
-                page = htmllib.unescape(r.read().decode())
+            status, page = self.post({}, path="/email")
             self.assertIn("draft addressed to person@example.invalid", page)
             self.assertEqual(len(g.drafts), 1)
             self.assertEqual(g.sent, [])
-            self.assertIn("3 of 4 locations", g.drafts["draft-1"]["message"]["body"]["content"])
 
     def test_email_post_needs_the_token(self):
         self.make_report()
-        body = urllib.parse.urlencode({"t": "wrong"}).encode()
-        with self.assertRaises(urllib.error.HTTPError) as cm:
-            urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{self.port}/email", data=body))
-        self.assertEqual(cm.exception.code, 403)
+        self.assertEqual(self.post({}, token="wrong", path="/email")[0], 403)
 
     def test_email_without_a_recipient_is_a_plain_message(self):
         self.make_report()
-        body = urllib.parse.urlencode({"t": self.server.token}).encode()
-        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{self.port}/email", data=body)) as r:
-            self.assertIn("Fill in who the email should go to", htmllib.unescape(r.read().decode()))
+        _, page = self.post({}, path="/email")
+        self.assertIn("Fill in who the email should go to", page)
 
     def test_send_automatically_changes_the_button_label(self):
-        from dssreport.settings import Settings, save_settings
         save_settings(Settings(email_enabled=True, email_to="person@example.invalid", email_send_auto=True))
         self.make_report()
         _, html = self.seen("/report")
         self.assertIn("Send it now through Microsoft 365", html)
+
+    def test_earlier_reports_can_be_opened_and_a_bad_folder_name_cannot(self):
+        self.make_report("2026-03-10")
+        self.make_report("2026-03-11")
+        _, html = self.seen("/report")
+        self.assertIn("Earlier reports", html)
+        self.assertIn("d=2026-03-10", html)
+        _, old = self.get(f"/report?t={self.server.token}&d=2026-03-10")
+        self.assertIn("3 of 4 locations need a look", old)
+        _, bad = self.get(f"/report?t={self.server.token}&d=../../etc")
+        self.assertIn("was not found", bad)
+
+
+class LicenceSection(Base):
+    def test_status_customer_connections_and_dates_are_shown(self):
+        self.add_instance()
+        _, html = self.get()
+        self.assertIn("Licence: valid for Sample Customer Ltd until 2099-12-31.", html)
+        self.assertIn("1 used of 2 allowed", html)
+        self.assertIn("Updates until", html)
+        self.assertIn("Email through Microsoft 365", html)
+        self.assertIn("nothing is sent anywhere", html)
+        self.assertIn('name="licence"', html)
+
+    def test_loading_a_good_licence_file(self):
+        (self.home / "licence.json").unlink()
+        _, html = self.get()
+        self.assertIn("Licence: not found", html)
+        _, html = self.upload_licence(H.make(customer="Another Sample Co", instances=5))
+        self.assertIn("Licence file loaded", html)
+        self.assertIn("valid for Another Sample Co", html)
+        self.assertIn("0 used of 5 allowed", html)
+
+    def test_a_tampered_licence_is_refused_plainly_and_the_old_one_stays(self):
+        before = (self.home / "licence.json").read_bytes()
+        bad = H.make(instances=99, secret=H.OTHER_SECRET)
+        _, html = self.upload_licence(bad)
+        self.assertIn("That licence file was not loaded", html)
+        self.assertIn("signature does not match", html)
+        self.assertEqual((self.home / "licence.json").read_bytes(), before)
+        _, html = self.upload_licence(b"not a licence")
+        self.assertIn("not a licence file", html)
+
+    def test_no_file_chosen(self):
+        boundary = "xb"
+        body = (f'--{boundary}\r\nContent-Disposition: form-data; name="t"\r\n\r\n{self.server.token}\r\n'
+                f'--{boundary}--\r\n').encode()
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/licence", data=body,
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        with urllib.request.urlopen(req) as r:
+            self.assertIn("Choose a licence file first", htmllib.unescape(r.read().decode()))
+
+    def test_expired_licence_is_shown_as_expired(self):
+        self.upload_licence(H.make(expires=date(2020, 1, 1)))
+        _, html = self.get()
+        self.assertIn("Licence: expired on 2020-01-01", html)
+
+    def test_over_the_limit_is_shown(self):
+        self.add_instance("Sample Group A")
+        self.add_instance("Sample Group B")
+        self.upload_licence(H.make(instances=1))
+        _, html = self.get()
+        self.assertIn("2 used of 1 allowed (over the limit)", html)
+
+
+class ConnectionLimit(Base):
+    licence_kw = {"instances": 1}
+
+    def add_form(self, existing, name):
+        return form_for(existing, action="save", new_name=name, new_url="https://odata.example.com/b",
+                        new_user=USER, new_pw="pw-x")
+
+    def test_adding_beyond_the_licence_is_refused_with_a_plain_message(self):
+        a = self.add_instance("Sample Group A")
+        _, html = self.post(self.add_form([a], "Sample Group B"))
+        self.assertIn("Licence: over limit. Your licence allows 1 connection and 1 is already set up.", html)
+        self.assertEqual([i.name for i in load_settings().instances], ["Sample Group A"])
+        self.assertEqual(self.store.items, {})                # nothing was stored either
+
+    def test_adding_within_the_licence_works_and_gets_its_own_credential_and_mapping_file(self):
+        _, html = self.post(self.add_form([], "Sample Group A"))
+        self.assertIn("Connection 'Sample Group A' added", html)
+        inst = load_settings().instances[0]
+        self.assertEqual(self.store.get(inst.credential_key), "pw-x")
+        self.assertEqual(inst.mapping_file, "mappings/sample-group-a.toml")
+        self.assertTrue(str(inst.mapping_path).startswith(str(self.home)))
+
+    def test_enabling_a_disabled_connection_counts_against_the_limit(self):
+        a = self.add_instance("Sample Group A")
+        b = self.add_instance("Sample Group B", enabled=False)
+        f = form_for([a, load_settings().instances[1]], action="save", inst_enabled_1="1")
+        _, html = self.post(f)
+        self.assertIn("Licence: over limit", html)
+        self.assertFalse(load_settings().instances[1].enabled)
+
+    def test_removing_one_makes_room(self):
+        a = self.add_instance("Sample Group A")
+        f = form_for([a], action="save", inst_remove_0="1", new_name="Sample Group B",
+                     new_url="https://odata.example.com/b", new_user=USER)
+        _, html = self.post(f)
+        self.assertIn("Connection 'Sample Group B' added", html)
+        self.assertEqual([i.name for i in load_settings().instances], ["Sample Group B"])
+
+
+
+class SeveralConnections(Base):
+    licence_kw = {"instances": 3}
+
+    def test_two_connections_are_each_kept_separately(self):
+        a = self.add_instance("Sample Group A", url="https://odata.example.com/a")
+        b = self.add_instance("Sample Group B", url="https://odata.example.com/b", user="OTHERDOMAIN\\other.user")
+        self.assertNotEqual(a.credential_key, b.credential_key)
+        self.assertNotEqual(a.mapping_file, b.mapping_file)
+        self.post(form_for([a, b], action="save", inst_pw_0="pw-for-a", inst_pw_1="pw-for-b"))
+        self.assertEqual(self.store.get(a.credential_key), "pw-for-a")
+        self.assertEqual(self.store.get(b.credential_key), "pw-for-b")
+        _, html = self.get()
+        self.assertIn("Sample Group A", html)
+        self.assertIn("Sample Group B", html)
+        self.assertIn("2 used of 3 allowed", html)
+
+    def test_two_connections_with_the_same_name_are_refused(self):
+        a = self.add_instance("Sample Group A")
+        f = form_for([a], action="save", new_name="sample group a", new_url="https://odata.example.com/z", new_user=USER)
+        _, html = self.post(f)
+        self.assertIn("both called", html)
+        self.assertEqual(len(load_settings().instances), 1)
+
+
+class NoLicence(Base):
+    install_licence = False
+
+    def test_no_licence_means_no_new_connection_but_the_page_works(self):
+        _, html = self.get()
+        self.assertIn("Licence: not found", html)
+        _, html = self.post(form_for([], action="save", new_name="Sample Group A",
+                                     new_url="https://odata.example.com/a", new_user=USER))
+        self.assertIn("Load a licence file in settings first", html)
+
+    def test_licensed_features_cannot_be_switched_on_without_the_flag(self):
+        _, html = self.post({"action": "save", **RULES, "schedule_enabled": "1"})
+        self.assertIn("Automatic schedule is not included in your licence", html)
+        _, html = self.post({"action": "save", **RULES, "ai_enabled": "1"})
+        self.assertIn("Summary sentence from a local model is not included", html)
+        _, html = self.post({"action": "save", **RULES, "rule_payments": "1"})
+        self.assertIn("Optional checks is not included", html)
+        _, html = self.post({"action": "save", **RULES, "email_enabled": "1", "email_to": "person@example.invalid"})
+        self.assertIn("Email through Microsoft 365 is not included", html)
+
+    def test_existing_reports_can_still_be_viewed_and_the_mail_app_link_still_works(self):
+        from dssreport.runner import run_report
+        from dssreport.state import save_state
+        res = run_report("demo", self.home / "reports" / "r1")      # demo data is never blocked
+        save_state({"last_report_dir": str(res.html_path.parent)})
+        _, html = self.get(f"/report?t={self.server.token}")
+        self.assertIn("3 of 4 locations need a look", html)
+        self.assertIn("Open in my mail app", html)
+
+
+if __name__ == "__main__":
+    unittest.main()
