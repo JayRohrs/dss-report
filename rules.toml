@@ -1,0 +1,51 @@
+# Review rules for the morning report.
+# Edit this file with any text editor (Notepad, TextEdit). Lines starting with # are notes.
+# Change a number or switch a rule on/off with true / false, save, and run the report again.
+
+[locations]
+# Leave empty to use every location found in the data.
+# To also report on a location that sent nothing at all, list it here, e.g.
+#   expected = ["Demo Bistro North", "Demo Grill East"]
+# A location with no data is shown as UNKNOWN, never as clean.
+expected = []
+# Locations to leave out of the report completely (for example one that has closed).
+ignore = []
+
+[rules.missing_pos_import]
+# Flag a day where the POS import did not arrive.
+enabled = true
+
+[rules.cash_variance]
+# Flag cash over or short by more than this many dollars (either direction).
+enabled = true
+limit = 5.00
+
+[rules.missing_receipts]
+# Flag a day with more missing receipts than this.
+enabled = true
+allowed = 0
+
+[rules.payment_exceptions]
+# Flag a day with more payment exceptions than this.
+enabled = true
+allowed = 0
+
+[rules.unapproved_entry]
+# Flag an entry that has not been approved.
+enabled = true
+
+# Not switchable, on purpose: a location with no data for a day, or a blank
+# value in a field a rule needs, is always shown as UNKNOWN.
+
+[report]
+title = "Morning exception report"
+
+[ai]
+# Off by default. The report is fully correct without it.
+# When on, a LOCAL model writes one summary sentence. The sentence is checked
+# against the computed facts and replaced by a standard sentence if it disagrees.
+# Only addresses on this computer (localhost / 127.0.0.1) are accepted.
+enabled = false
+endpoint = "http://localhost:11434"
+model = "your-local-model"
+timeout_seconds = 30
