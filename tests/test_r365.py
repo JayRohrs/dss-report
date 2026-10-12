@@ -144,6 +144,8 @@ class SafetyAndErrors(unittest.TestCase):
         with self.assertRaises(InputError) as cm:
             c.get_metadata_xml()
         self.assertNotIn(PASSWORD, str(cm.exception))
+        self.assertIn("nothing answered at that address", str(cm.exception))
+        self.assertNotIn("Errno", str(cm.exception))
 
 
 class Mapping_(unittest.TestCase):

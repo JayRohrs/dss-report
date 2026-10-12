@@ -13,6 +13,8 @@ and redirects are refused so they can never be forwarded elsewhere.
 """
 
 import base64
+import re
+import socket
 import json
 import tomllib
 import urllib.error
@@ -33,6 +35,17 @@ from .sources import DataSource, check_mapping_format, register_source, CURRENT_
 MAX_DAYS_PER_REQUEST = 31   # a third-party review reports a 31-day cap; unconfirmed, so we stay under it
 FIELD_KEYS = ("sales_total", "cash_over_short", "missing_receipts", "payment_exceptions",
               "approved", "pos_import_received")
+
+
+def _plain_reason(reason, password: str) -> str:
+    """A short human reason for a failed connection, with no secrets and no error codes."""
+    if isinstance(reason, ConnectionRefusedError):
+        return "nothing answered at that address"
+    if isinstance(reason, TimeoutError) or "timed out" in str(reason).lower():
+        return "it took too long to answer"
+    if isinstance(reason, socket.gaierror) or "name or service not known" in str(reason).lower():
+        return "that address could not be found"
+    return re.sub(r"^\[Errno \d+\]\s*", "", redact(str(reason), password)) or "no reason given"
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -70,7 +83,7 @@ class ODataClient:
             raise ConnectionFailed(f"R365 answered with an error (HTTP {exc.code}).")
         except (urllib.error.URLError, OSError) as exc:
             raise ConnectionFailed("Could not reach R365 at the configured address "
-                             f"({redact(str(getattr(exc, 'reason', exc)), self._password)}).")
+                                   f"({_plain_reason(getattr(exc, 'reason', exc), self._password)}).")
 
     def get_json(self, url: str) -> dict:
         try:
