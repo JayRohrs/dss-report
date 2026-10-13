@@ -613,10 +613,10 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
                 if stale:
                     when = ("the file does not say when it was downloaded" if as_of is None
                             else f"the file is dated {as_of.date().isoformat()}, older than today")
-                    note = f"Approval is UNKNOWN: {when} (it said '{word}')."
+                    note = f"Approval status cannot be established: {when} (it said '{word}')."
                 elif verdict is None:
                     meaning = KNOWN_WORD_MEANING.get(cw)
-                    note = (f"Approval is UNKNOWN: the file says '{word}'"
+                    note = (f"Approval status is not clear: the file says '{word}'"
                             + (f" ({meaning})" if meaning else "")
                             + ", which is not treated as approved or not approved.")
                 else:

@@ -37,7 +37,7 @@ from dssreport import updates  # noqa: E402
 def collect(source: Path):
     files = {}
     for p in sorted((source / "dssreport").rglob("*")):
-        if p.is_file() and p.suffix in (".py", ".pyw") and "__pycache__" not in p.parts:
+        if p.is_file() and p.suffix in (".py", ".pyw", ".toml") and "__pycache__" not in p.parts:
             files[p.relative_to(source).as_posix()] = p.read_bytes()
     for name in updates.ALLOWED_FILES:
         if (source / name).is_file():

@@ -424,7 +424,7 @@ class Freshness(unittest.TestCase):
                   as_of=datetime(2026, 3, 13, 23, 50))
         for r in p.records:
             self.assertIsNone(r.approved)
-            self.assertIn("dated 2026-03-13, older than today", r.approval_note)
+            self.assertIn("the file is dated 2026-03-13, older than today", r.approval_note)
         self.assertIn("'Unapproved'", by_loc(p)["Sample Hill Bistro"].approval_note)             # the word is kept
         self.assertTrue(p.warnings[0].startswith("This file is dated 2026-03-13. A file older than today cannot establish today's approval status"))
 

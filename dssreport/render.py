@@ -114,7 +114,7 @@ def render_html(report) -> str:
 def render_text(report) -> str:
     if isinstance(report, MultiReport):
         return _render_multi_text(report)
-    wrap = lambda s, ind="": textwrap.fill(s, 76, initial_indent=ind, subsequent_indent=ind + "  ")
+    wrap = lambda s, ind="": textwrap.fill(s, 76, initial_indent=ind, subsequent_indent=" " * len(ind) + "  ")
     lines = [f"Subject: {report.title} - {date_label(report.dates)}: "
              + (f"{len(report.attention)} of {report.total} locations need a look"
                 if report.attention else
@@ -239,7 +239,7 @@ def multi_subject(m: MultiReport) -> str:
 
 
 def _render_multi_text(m: MultiReport) -> str:
-    wrap = lambda s, ind="": textwrap.fill(s, 76, initial_indent=ind, subsequent_indent=ind + "  ")
+    wrap = lambda s, ind="": textwrap.fill(s, 76, initial_indent=ind, subsequent_indent=" " * len(ind) + "  ")
     lines = [f"Subject: {multi_subject(m)}", "", wrap(m.headline)]
     if m.late_note:
         lines += ["", wrap("LATE: " + m.late_note.removeprefix("Late: "))]
