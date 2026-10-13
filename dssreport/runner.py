@@ -105,7 +105,9 @@ def _add_summary(report, cfg: Config, status: lic.LicenceStatus, notes: List[str
 def _build_r365_report(cfg: Config, status: lic.LicenceStatus, end: Optional[date], days: int,
                        notes: List[str], only_instance: Optional[str] = None) -> Union[Report, MultiReport]:
     settings = load_settings()
-    instances = [i for i in settings.enabled_instances if only_instance in (None, i.id)]
+    instances = list(settings.enabled_instances)
+    if only_instance is not None and not any(i.id == only_instance for i in instances):
+        raise InputError("That connection is not switched on. Tick \"Connect\" for it and save first.")
     if not instances:
         raise InputError("No R365 connection is set up yet. Open settings and add one.")
     # From a live source we always ask for an explicit day (yesterday by default), so a missing latest
@@ -124,6 +126,8 @@ def _build_r365_report(cfg: Config, status: lic.LicenceStatus, end: Optional[dat
     state = load_state()
     sections: List[Section] = []
     for idx, inst in enumerate(instances):
+        if only_instance is not None and inst.id != only_instance:
+            continue                         # the licence limit is still counted over ALL connections
         if idx >= allowed:
             why = (status.message if status.state != lic.OK else
                    f"Licence: over limit. Your licence allows {allowed} connection"

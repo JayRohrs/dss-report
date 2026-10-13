@@ -43,6 +43,12 @@ def _parser():
     r365.add_argument("action", choices=["test", "discover"],
                       help="test = check the sign-in; discover = list the entities and fields your tenant offers")
     r365.add_argument("--instance", help="the connection's name (default: the first one)")
+    ex = sub.add_parser("export", help="the DSS export file source (read-only; nothing leaves this computer)")
+    ex.add_argument("action", choices=["load"], help="load = keep a copy of a DSS list file you downloaded from R365")
+    ex.add_argument("file")
+    ex.add_argument("--instance", help="the connection's name (default: the first DSS export connection)")
+    dx = sub.add_parser("demo-export", help="write made-up sample DSS list files (CSV, TSV, Excel) to try the export source")
+    dx.add_argument("--out", required=True, help="folder to write into")
     demo = sub.add_parser("demo-data", help="write the made-up demo data as CSV and JSON files")
     demo.add_argument("--out", required=True, help="folder to write into")
     return p
@@ -113,6 +119,29 @@ def _update(args) -> int:
     return 0
 
 
+def _export(args) -> int:
+    from pathlib import Path as _P
+    import os as _os
+    from .dss_export_source import KIND, store_export
+    from .errors import InputError
+    from .settings import load_settings
+    s = load_settings()
+    pool = [i for i in s.instances if i.source_kind == KIND]
+    wanted = (args.instance or "").strip().lower()
+    inst = next((i for i in pool if not wanted or wanted in (i.name.lower(), i.id)), None)
+    if inst is None:
+        raise InputError("There is no DSS export connection" + (f" called '{args.instance}'" if args.instance else "")
+                         + ". Add one in settings (source: R365 DSS export file).")
+    src = _P(args.file)
+    if not src.is_file():
+        raise InputError("That is not a file.")
+    data = src.read_bytes()                                  # read only: the file is never changed
+    meta = store_export(inst, src.name, data, _os.stat(src).st_mtime)
+    print(f"Kept a copy of {meta['original_name']} for {inst.name}: {meta['rows']} rows. "
+          "Now run: python -m dssreport run --input r365 --out out/")
+    return 0
+
+
 def _forget() -> int:
     from .credstore import default_store
     from .graph import SESSION_KEY
@@ -155,6 +184,15 @@ def main(argv=None) -> int:
             return 0
         if args.command == "r365":
             return _r365(args)
+        if args.command == "demo-export":
+            from .dss_export_sample import write_samples
+            for path in write_samples(args.out):
+                print(f"Wrote {path}")
+            print("Make a connection with the source 'R365 DSS export file' in settings, choose one of these, and press "
+                  "'Check DSS export now'. Dates are relative to today, so they are fresh now and go stale tomorrow.")
+            return 0
+        if args.command == "export":
+            return _export(args)
         if args.command == "settings":
             from .settings_server import serve
             return serve()

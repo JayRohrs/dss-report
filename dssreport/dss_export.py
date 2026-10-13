@@ -56,7 +56,9 @@ class ExportError(InputError):
 # ------------------------------------------------------------------------------------------ headings
 
 def norm(text) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(text).lower())
+    """Compare headings ignoring case, spaces and punctuation. "#" counts as "number" (so "Location #" is the
+    location NUMBER column, not the location)."""
+    return re.sub(r"[^a-z0-9]", "", str(text).lower().replace("#", " number "))
 
 
 @dataclass
@@ -654,9 +656,10 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
                         "were set aside.")
     if bad_over:
         warnings.append(f"{bad_over} Over/Short value{'s' if bad_over != 1 else ''} could not be read as a number "
-                        "and are shown as UNKNOWN.")
+                        f"and {'are' if bad_over != 1 else 'is'} shown as UNKNOWN.")
     if bad_sales:
-        warnings.append(f"{bad_sales} Net Sales value{'s' if bad_sales != 1 else ''} could not be read as a number.")
+        warnings.append(f"{bad_sales} Net Sales value{'s' if bad_sales != 1 else ''} could not be read as a number "
+                        f"and {'are' if bad_sales != 1 else 'is'} shown as blank.")
     if conflict_days:
         warnings.append(f"{conflict_days} day{'s' if conflict_days != 1 else ''} had rows that disagree with each "
                         "other. Those are shown as UNKNOWN and marked as a conflict.")
