@@ -41,6 +41,8 @@ class DataSource(Adapter):
     """
 
     kind = ""
+    #: False for sources that read a file the person chose and need no saved password
+    needs_credentials = True
     mapping_formats: FrozenSet[int] = frozenset({CURRENT_MAPPING_VERSION})
     needs_window = True
 
@@ -67,7 +69,7 @@ def register_source(cls: Type[DataSource]) -> Type[DataSource]:
 
 def build_source(instance: Instance, store: CredentialStore, include=()) -> DataSource:
     """Make the right connector for an instance. Raises a plain-words DssError if it can't."""
-    from . import r365  # noqa: F401  (registers the OData connector)
+    from . import dss_export_source, r365  # noqa: F401  (registers the built-in connectors)
     cls = SOURCE_KINDS.get(instance.source_kind)
     if cls is None:
         raise ConfigError(f"This program has no data source called '{instance.source_kind}'.")

@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from .errors import ConfigError
@@ -29,6 +29,8 @@ class Instance:
     credential_key: str = ""         # name of this instance's entry in the OS credential store
     include: List[str] = field(default_factory=list)   # "only these locations" (optional)
     hidden: List[str] = field(default_factory=list)    # locations switched off
+    # DSS export only: extra meanings for status words, e.g. {"in progress": "not approved"}. Empty = off.
+    approval_words: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.mapping_file:
@@ -88,6 +90,21 @@ def is_safe_url(url: str) -> bool:
     return u.scheme == "https" or (u.scheme == "http" and u.hostname in LOOPBACK)
 
 
+def _check_approval_words(i: Instance) -> None:
+    from .dss_export import BUILT_IN_APPROVAL, OVERRIDE_VALUES, _canon_word
+    if not isinstance(i.approval_words, dict):
+        raise ConfigError(f"Connection '{i.name}': the status word meanings must be a list of 'word = meaning' lines.")
+    for word, meaning in i.approval_words.items():
+        cw, cm = _canon_word(str(word)), _canon_word(str(meaning))
+        if not cw or len(cw) > 40:
+            raise ConfigError(f"Connection '{i.name}': a status word is empty or too long.")
+        if cw in BUILT_IN_APPROVAL or cw == "not approved":
+            raise ConfigError(f"Connection '{i.name}': the meanings of 'Approved' and 'Unapproved' are fixed and "
+                              "cannot be changed.")
+        if cm not in OVERRIDE_VALUES:
+            raise ConfigError(f"Connection '{i.name}': '{word}' must mean 'approved' or 'not approved'.")
+
+
 def validate(s: Settings) -> Settings:
     ids, names = set(), set()
     for i in s.instances:
@@ -101,15 +118,16 @@ def validate(s: Settings) -> Settings:
         if i.name.strip().lower() in names:
             raise ConfigError(f"Two connections are both called '{i.name}'. Give each its own name.")
         names.add(i.name.strip().lower())
-        from . import r365  # noqa: F401  (registers the built-in connector)
+        from . import dss_export_source, r365  # noqa: F401  (registers the built-in connectors)
         from .sources import SOURCE_KINDS
         if i.source_kind not in SOURCE_KINDS:
             raise ConfigError(f"Connection '{i.name}': this program does not know the data source '{i.source_kind}'.")
         if i.base_url and not is_safe_url(i.base_url):
             raise ConfigError(f"Connection '{i.name}': the R365 address must start with https:// "
                               "(and not contain a user name or password).")
-        if i.enabled and not (i.base_url and i.username):
+        if i.enabled and i.source_kind == "odata" and not (i.base_url and i.username):
             raise ConfigError(f"Connection '{i.name}': fill in the address and the user name, or untick Connect.")
+        _check_approval_words(i)
         if ".." in Path(i.mapping_file).parts or Path(i.mapping_file).is_absolute():
             raise ConfigError(f"Connection '{i.name}': the mapping file must be inside the program's own folder.")
     if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", s.schedule_time):

@@ -26,6 +26,7 @@ EXCEPTIONS = "payment_exceptions"
 UNAPPROVED = "unapproved_entry"
 SALES_BLANK = "sales_blank"
 PAYMENTS_TOTAL = "payments_total"
+CONFLICT = "conflicting_rows"
 
 # Which DayRecord fields each check needs. If the data source cannot provide a
 # field at all (not mapped), the check is skipped and shown as "needs mapping".
@@ -93,6 +94,12 @@ def evaluate_day(location: str, day: date, rec: Optional[DayRecord], cfg: Config
     def add(rule, kind, text):
         out.append(Finding(day, rule, kind, text))
 
+    if rec.conflicts:
+        add(CONFLICT, UNKNOWN, "Conflict: two or more rows for this day disagree on "
+                               + ", ".join(rec.conflicts) + " (shown as UNKNOWN)")
+    c_approval, c_cash, c_sales = (("approval status" in rec.conflicts), ("over/short" in rec.conflicts),
+                                   ("net sales" in rec.conflicts))
+
     def on(rule):
         return rule_status(cfg, rule, unmapped) == ON
 
@@ -104,13 +111,14 @@ def evaluate_day(location: str, day: date, rec: Optional[DayRecord], cfg: Config
 
     # With no POS import, sales figures are expected to be blank; the missing
     # import already says so. Otherwise a blank sales total is unknown.
-    if on(SALES_BLANK) and rec.pos_import_received is not False and rec.sales_total is None:
+    if on(SALES_BLANK) and rec.pos_import_received is not False and rec.sales_total is None and not c_sales:
         add(SALES_BLANK, UNKNOWN, "Sales total is blank")
 
     if on(CASH):
         v = rec.cash_over_short
         if v is None:
-            add(CASH, UNKNOWN, "Cash over/short is blank")
+            if not c_cash:
+                add(CASH, UNKNOWN, "Cash over/short is blank")
         elif abs(v) > cfg.cash_limit:
             direction = "short" if v < 0 else "over"
             add(CASH, ISSUE, f"Cash is {money(v)} {direction} (limit {money(cfg.cash_limit)})")
@@ -132,8 +140,8 @@ def evaluate_day(location: str, day: date, rec: Optional[DayRecord], cfg: Config
     if on(UNAPPROVED):
         if rec.approved is False:
             add(UNAPPROVED, ISSUE, "Entry is not approved")
-        elif rec.approved is None:
-            add(UNAPPROVED, UNKNOWN, "Approval status is blank")
+        elif rec.approved is None and not c_approval:
+            add(UNAPPROVED, UNKNOWN, rec.approval_note or "Approval status is blank")
 
     # Optional: the payment types should add up to the sales total.
     if on(PAYMENTS_TOTAL) and rec.pos_import_received is not False:

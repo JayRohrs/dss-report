@@ -66,13 +66,16 @@ def render_html(report) -> str:
            f'<h1>{e(report.title)}</h1>',
            f'<p class="date">{e(date_label(report.dates))}</p>',
            f'<p class="headline">{e(report.headline)}</p>']
+    out += _source_html(report)
     if report.late_note:
         out.append(f'<p class="warn">{e(report.late_note)}</p>')
     if report.licence_notice or report.licence_problem:
         out.append(f'<p class="warn">{e(report.licence_notice or report.licence_line)}</p>')
     if report.needs_mapping:
-        out.append('<p class="warn">Not checked (needs mapping): ' + e(", ".join(report.needs_mapping))
-                   + '. These checks were skipped because the data source has no confirmed field for them.</p>')
+        out.append('<p class="warn">Not checked' + ("" if report.needs_mapping_text else " (needs mapping)") + ': '
+                   + e(", ".join(report.needs_mapping)) + '. '
+                   + e(report.needs_mapping_text or "These checks were skipped because the data source has no confirmed field for them.")
+                   + '</p>')
     if report.summary_sentence:
         out.append(f'<p class="summary">{e(report.summary_sentence)}</p>')
         out.append(f'<p class="note">{e(SOURCE_NOTE[report.summary_source])}</p>')
@@ -117,12 +120,14 @@ def render_text(report) -> str:
                 if report.attention else
                 ("nothing to review" if report.total else "no data (UNKNOWN)")),
              "", wrap(report.headline)]
+    lines += _source_text(report, wrap)
     if report.late_note:
         lines += ["", wrap("LATE: " + report.late_note.removeprefix("Late: "))]
     if report.licence_notice or report.licence_problem:
         lines += ["", wrap(report.licence_notice or report.licence_line)]
     if report.needs_mapping:
-        lines += ["", wrap("NOT CHECKED (needs mapping): " + ", ".join(report.needs_mapping) + ".")]
+        lines += ["", wrap("NOT CHECKED" + ("" if report.needs_mapping_text else " (needs mapping)") + ": "
+                           + ", ".join(report.needs_mapping) + ". " + report.needs_mapping_text)]
     if report.summary_sentence:
         lines += ["", wrap(report.summary_sentence)]
     lines += ["", "NEEDS A LOOK", "------------"]
@@ -141,6 +146,22 @@ def render_text(report) -> str:
         lines += ["", wrap(report.licence_line)]
     lines += ["", f"Data source: {report.source_name}. Made by a computer program; nothing was sent anywhere."]
     return "\n".join(lines) + "\n"
+
+
+def _source_html(r: Report, e=escape) -> list:
+    out = []
+    if r.source_line:
+        out.append(f'<p class="note"><strong>{e(r.source_line)}</strong></p>')
+    out += [f'<p class="warn">{e(w)}</p>' for w in r.source_warnings]
+    return out
+
+
+def _source_text(r: Report, wrap) -> list:
+    out = []
+    if r.source_line:
+        out += ["", wrap(r.source_line)]
+    out += [x for w in r.source_warnings for x in ("", wrap(w))]
+    return out
 
 
 def _table_html(report: Report, e=escape, level="h3") -> list:
@@ -187,6 +208,7 @@ def _render_multi_html(m: MultiReport) -> str:
         out.append(f'<p class="note">{e(SOURCE_NOTE[m.summary_source])}</p>')
     for s in m.ok_sections:
         out.append(f'<h2 class="inst">{e(s.name)}</h2><p class="subhead">{e(s.report.headline)}</p>')
+        out += _source_html(s.report)
         out += _table_html(s.report)
         if s.report.scope_note:
             out.append(f'<p class="note">{e(s.report.scope_note)}</p>')
@@ -231,7 +253,9 @@ def _render_multi_text(m: MultiReport) -> str:
         lines += ["", wrap(m.summary_sentence)]
     for s in m.ok_sections:
         r = s.report
-        lines += ["", s.name.upper(), "=" * len(s.name), wrap(r.headline), "", "NEEDS A LOOK", "------------"]
+        lines += ["", s.name.upper(), "=" * len(s.name), wrap(r.headline)]
+        lines += _source_text(r, wrap)
+        lines += ["", "NEEDS A LOOK", "------------"]
         if r.attention:
             for x in r.attention:
                 lines.append(f"* {x.name} [{x.status}]")

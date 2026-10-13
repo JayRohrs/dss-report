@@ -1,0 +1,28 @@
+# Which column headings in an R365 Daily Sales Summary (DSS) list export mean what.
+#
+# The program reads a downloaded export by heading NAME, never by column position. Headings are compared
+# ignoring capital letters, spaces and punctuation, so "Over/Short", "over short" and "OVER-SHORT" are the same.
+# Extra columns and a different column order are fine. If a heading you need is missing from this list, the
+# report says so in plain words ("This file has no Over/Short column"); nothing is guessed.
+#
+# To teach the program a new wording (for example from a newer R365 layout) you do NOT need to edit this file:
+# put a file called dss_export_aliases.toml in your DssReport folder (%LOCALAPPDATA%\DssReport) with the same
+# layout. Its words are ADDED to these, and it survives updates. Within one field the first matching word in the
+# list wins when a file has two candidate columns.
+
+version = 1
+
+[fields]
+# the restaurant (required)
+location = ["Location", "Location Name", "Store", "Restaurant", "Unit"]
+# the restaurant's number (read, not needed by any check)
+location_number = ["Location Number", "Location No", "Location #", "Store Number", "Unit Number"]
+# the business day (required)
+business_date = ["Date", "Business Date", "DSS Date", "Sales Date"]
+# plain text: Approved / Unapproved (classic); the newer list can also say In Progress / Completed
+approval_status = ["Approval Status", "DSS Status", "Review Status", "Status"]
+# cash over (positive) or short (negative)
+over_short = ["Over/Short", "Cash Over/Short", "Over (Short)", "Short/Over", "Variance"]
+net_sales = ["Net Sales", "Net Sale", "Total Net Sales"]
+# read, not used by any check
+deposit = ["Total Deposit", "Deposit Total", "Deposits", "Deposit"]
