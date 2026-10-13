@@ -47,6 +47,7 @@ def _parser():
     ex.add_argument("action", choices=["load"], help="load = keep a copy of a DSS list file you downloaded from R365")
     ex.add_argument("file")
     ex.add_argument("--instance", help="the connection's name (default: the first DSS export connection)")
+    ex.add_argument("--expected-total", type=int, help="the total R365 shows on screen (\"... of N items\"), to notice a partial file")
     dx = sub.add_parser("demo-export", help="write made-up sample DSS list files (CSV, TSV, Excel) to try the export source")
     dx.add_argument("--out", required=True, help="folder to write into")
     demo = sub.add_parser("demo-data", help="write the made-up demo data as CSV and JSON files")
@@ -136,7 +137,7 @@ def _export(args) -> int:
     if not src.is_file():
         raise InputError("That is not a file.")
     data = src.read_bytes()                                  # read only: the file is never changed
-    meta = store_export(inst, src.name, data, _os.stat(src).st_mtime)
+    meta = store_export(inst, src.name, data, _os.stat(src).st_mtime, expected_total=args.expected_total)
     print(f"Kept a copy of {meta['original_name']} for {inst.name}: {meta['rows']} rows. "
           "Now run: python -m dssreport run --input r365 --out out/")
     return 0

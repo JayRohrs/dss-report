@@ -28,3 +28,6 @@ class DayRecord:
     approval_note: Optional[str] = None
     # Fields on which several source rows for this day disagreed (shown as UNKNOWN and listed as a conflict)
     conflicts: Tuple[str, ...] = ()
+    # False when the source's sign convention for over/short is not proven (the DSS export): the report then
+    # shows R365's own signed figure and does not call it "over" or "short".
+    cash_sign_known: bool = True

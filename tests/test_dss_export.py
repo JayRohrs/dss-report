@@ -37,6 +37,12 @@ def aliases():
 
 
 def csv_text(headers, rows, pre=(), post=(), delim=","):
+    rows = [list(r) for r in rows]
+    if "__count" in headers:                                   # the classic export repeats the row count on every row
+        idx = headers.index("__count")
+        for r in rows:
+            if len(r) > idx and r[idx] == "":
+                r[idx] = str(len(rows))
     lines = [delim.join(p) if isinstance(p, (list, tuple)) else p for p in pre]
     lines.append(delim.join(headers))
     lines += [delim.join(str(c) for c in r) for r in rows]
@@ -49,14 +55,16 @@ def parse(data, name="x.csv", as_of=FRESH, today=TODAY, words=None):
     return E.parse_export(rows, aliases(), words, as_of, today, stats)
 
 
-H_CLASSIC = ["Approval Status", "Location", "Location Number", "Name", "Date", "Attachment", "Net Sales",
-             "Total Deposit", "Over/Short", "Guest Count", "Steps Complete", "Log Entries", "Paidout Total",
-             "Created By", "Created On", "Modified By", "Modified On"]
+H_CLASSIC = S.CLASSIC_HEADERS          # the real classic heading row, verbatim
 
 
-def classic_row(status="Approved", loc="Sample Pier Grill", d="03/13/2026", over="1.25", sales="3100.00", extra=None):
-    return [status, loc, "101", f"DSS {d}", d, "", sales, "3000.00", over, "90", "5/5", "2", "0.00",
-            "Sample User", "03/14/2026 06:00 AM", "Sample User", "03/14/2026 07:30 AM"]
+def classic_row(status="Approved", loc="Sample Pier Grill", d="03/13/2026", over="1.2500", sales="3100.0000"):
+    """One row in the real classic layout (23 columns). __count is filled in by csv_text."""
+    day = d if " " in d else d + " 12:00:00 AM"
+    wf = "Approved" if status == "Approved" else "In Progress"
+    return [status, wf, loc, "101", f'"{loc} Friday, {d}"', day, sales, "3000.0000", over, "90", "No", "",
+            "2026-03-14T08:15:00.0000000Z", "Sample User", "2026-03-14T08:20:00.0000000Z",
+            "-".join(["0" * 8, "0000", "4000", "8000", "0" * 12]), "0.0000", "", "", "", "", "", ""]
 
 
 def by_loc(parsed, day=DAY):
@@ -65,24 +73,36 @@ def by_loc(parsed, day=DAY):
 
 class Layouts(unittest.TestCase):
     def test_classic_layout_with_every_header_from_the_owner_s_list(self):
-        p = parse(csv_text(H_CLASSIC, [classic_row(), classic_row("Unapproved", "Sample Hill Bistro", over="-23.50")]))
+        p = parse(csv_text(H_CLASSIC, [classic_row(), classic_row("Unapproved", "Sample Hill Bistro", over="-23.5000")]))
         r = by_loc(p)
         self.assertTrue(r["Sample Pier Grill"].approved)
         self.assertFalse(r["Sample Hill Bistro"].approved)
         self.assertEqual(r["Sample Hill Bistro"].cash_over_short, Decimal("-23.50"))
-        self.assertEqual(r["Sample Pier Grill"].sales_total, Decimal("3100.00"))
+        self.assertEqual(r["Sample Pier Grill"].sales_total, Decimal("3100"))
         self.assertEqual(p.missing, [])
-        self.assertIn("Guest Count", p.unrecognised)               # extra columns are tolerated
+        self.assertIn("GuestCount", p.unrecognised)                # extra columns are tolerated
+        self.assertIn("Status", p.unrecognised)                    # the classic list's separate workflow column
 
-    def test_beta_style_layout_title_line_other_headings_and_footer(self):
-        p = parse(S.csv_bytes("beta", TODAY), as_of=FRESH)
+    def test_the_newer_layout_exact_headings_byte_order_mark_and_no_count(self):
+        data = S.csv_bytes("beta", TODAY)
+        self.assertTrue(data.startswith(b"\xef\xbb\xbf"))
+        p = parse(data, as_of=FRESH)
         self.assertEqual(p.columns["approval_status"], "Status")
-        self.assertEqual(p.columns["over_short"], "Over (Short)")
-        self.assertEqual(p.columns["location"], "Location Name")
-        self.assertEqual(p.stated_total, p.rows_read)
-        self.assertEqual({r.location for r in p.records}, {x[0] for x in S.LOCATIONS})   # "Location #" is NOT the location
-        self.assertEqual(p.warnings, ["This file has no Location Number column (not needed by any check)."]
-                         if "location_number" in p.missing else p.warnings)
+        self.assertEqual(p.columns["over_short"], "Over/Short")
+        self.assertEqual(p.columns["net_sales"], "Net Sales")
+        self.assertEqual(p.columns["location"], "Location")
+        self.assertEqual(p.stated_total, None)                      # the newer list has no count column
+        self.assertTrue(any("does not say how many entries it should hold" in w for w in p.warnings))
+        self.assertEqual({r.location for r in p.records}, {x[0] for x in S.LOCATIONS})
+        self.assertEqual(sorted(p.unrecognised), ["Attachments", "Guest Count", "Labor %", "Total Labor $", "Total Labor Hours"])
+
+    def test_a_title_line_and_a_total_records_footer_are_still_understood_if_a_layout_has_them(self):
+        data = csv_text(["Status", "Location", "Date", "Over (Short)"],
+                        [["Approved", "Sample Pier Grill", "03/13/2026", "1.00"]],
+                        pre=["Daily Sales Summaries", ""], post=["", "Total Records: 3"])
+        p = parse(data)
+        self.assertEqual((p.stated_total, p.rows_read), (3, 1))
+        self.assertTrue(p.warnings[0].startswith("Partial list"))
 
     def test_heading_row_need_not_be_on_line_one_and_trailing_lines_are_skipped(self):
         data = csv_text(H_CLASSIC, [classic_row()], pre=["Daily Sales Summaries", "Sample Group A", ""],
@@ -251,8 +271,10 @@ class OverShort(unittest.TestCase):
             rec = by_loc(parse(csv_text(["Location", "Date", "Over/Short"], [["Sample Dock Cafe", "03/13/2026", text]])))["Sample Dock Cafe"]
             found = [f for f in rules.evaluate_day("X", DAY, rec, cfg) if f.rule == rules.CASH]
             self.assertEqual(bool(found), flagged, text)
-            if found:
-                self.assertIn(word, found[0].text)
+            if found:                                               # R365's own signed number, not called over/short
+                self.assertIn(f"Over/Short is {'-' if text.startswith('-') else ''}$5.01 as R365 gives it", found[0].text)
+                self.assertIn("either way", found[0].text)
+                self.assertNotIn(" short ", found[0].text.replace("Over/Short", ""))
         bigger = Config(cash_limit=Decimal("20"))
         rec = by_loc(parse(csv_text(["Location", "Date", "Over/Short"], [["Sample Dock Cafe", "03/13/2026", "-23.50"]])))["Sample Dock Cafe"]
         self.assertTrue([f for f in rules.evaluate_day("X", DAY, rec, bigger) if f.rule == rules.CASH])
@@ -447,14 +469,18 @@ class Sample(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in files), ["sample-dss-beta-style.csv", "sample-dss-beta-style.xlsx",
                                                           "sample-dss-classic.csv", "sample-dss-classic.tsv", "sample-dss-classic.xlsx"])
         self.assertEqual(S.xlsx_bytes(S.table("classic", TODAY)), S.xlsx_bytes(S.table("classic", TODAY)))
-        text = (out / "sample-dss-classic.csv").read_text()
+        text = (out / "sample-dss-classic.csv").read_text(encoding="utf-8")
         self.assertNotIn("R365", text)
+        self.assertTrue(text.startswith("ApprovalStatus,Status,Location,LocationNumber,Name,Date,NetSales"))
         p = parse((out / "sample-dss-classic.xlsx").read_bytes(), "a.xlsx")
         last = by_loc(p)
         self.assertEqual((last["Sample Pier Grill"].approved, last["Sample Hill Bistro"].approved, last["Sample Dock Cafe"].approved),
-                         (True, False, None))
+                         (True, False, True))
         self.assertNotIn("Sample Park Diner", last)                # the planted missing day
         self.assertEqual(last["Sample Hill Bistro"].cash_over_short, Decimal("-23.5"))
+        beta = by_loc(parse((out / "sample-dss-beta-style.csv").read_bytes()))
+        self.assertEqual((beta["Sample Pier Grill"].approved, beta["Sample Hill Bistro"].approved), (True, None))
+        self.assertIn("'In Progress'", beta["Sample Hill Bistro"].approval_note)
 
 
 if __name__ == "__main__":

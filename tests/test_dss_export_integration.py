@@ -84,11 +84,9 @@ class EndToEnd(Env):
         by = {x.name: x for x in r.attention}
         hill = [f.text for f in by["Sample Hill Bistro"].findings]
         self.assertIn("Entry is not approved", hill)
-        self.assertIn("Cash is $23.50 short (limit $5.00)", hill)
-        dock = [f.text for f in by["Sample Dock Cafe"].findings]
-        self.assertTrue(any("'In Progress'" in t and "not treated as approved or not approved" in t for t in dock))
-        self.assertEqual(by["Sample Dock Cafe"].status, "UNKNOWN")
-        self.assertEqual([x.name for x in r.clear], ["Sample Pier Grill"])
+        self.assertIn("Over/Short is -$23.50 as R365 gives it (limit $5.00 either way)", hill)
+        self.assertFalse(any(t.startswith("Cash is") for t in hill))   # no claim about direction
+        self.assertEqual(sorted(x.name for x in r.clear), ["Sample Dock Cafe", "Sample Pier Grill"])
         diner = [f.text for f in by["Sample Park Diner"].findings]
         self.assertEqual(diner, ["No data for this day"])                         # a missing day is UNKNOWN
         self.assertNotIn("Nothing to review: all", r.headline)
@@ -128,7 +126,7 @@ class EndToEnd(Env):
             flat = re.sub(r"\s+", " ", htmllib.unescape(t))
             self.assertIn(f"This file is dated {old}. A file older than today cannot establish today's approval status", flat)
             self.assertNotIn("Entry is not approved", flat)           # not claimed from a stale file
-        self.assertIn("Cash is $23.50 short", html)                    # over/short is still checked
+        self.assertIn("Over/Short is -$23.50 as R365 gives it", html)  # over/short is still checked
         self.assertNotIn("Entry is not approved", html)
         by = {x.name: x for x in res.report.attention}
         self.assertEqual(by["Sample Pier Grill"].status, "UNKNOWN")    # even the "Approved" row is not trusted
@@ -181,8 +179,9 @@ class EndToEnd(Env):
     def test_the_owner_s_word_meaning_applies_to_that_connection_only(self):
         a, b = inst("Sample Group A", approval_words={"In Progress": "not approved"}), inst("Sample Group B")
         self.connect(a, b)
-        self.give(a)
-        self.give(b)
+        beta = S.csv_bytes("beta", TODAY)
+        self.give(a, data=beta)
+        self.give(b, data=beta)
         res = self.run_it()
         by = {s.name: {x.name: x for x in s.report.attention} for s in res.report.ok_sections}
         a_dock = [f.text for f in by["Sample Group A"]["Sample Dock Cafe"].findings]

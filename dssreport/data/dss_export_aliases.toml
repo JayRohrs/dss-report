@@ -1,5 +1,10 @@
 # Which column headings in an R365 Daily Sales Summary (DSS) list export mean what.
 #
+# Headings seen in real exports (classic: ApprovalStatus, Status, Location, LocationNumber, Name, Date, NetSales,
+# TotalDeposit, OverShort, GuestCount, ...; newer: Status, Location, Date, Attachments, Net Sales, Total Deposit,
+# Over/Short, Guest Count, ...) are all covered. In the classic export "ApprovalStatus" is the approval word and
+# "Status" is a separate workflow column; the program prefers "ApprovalStatus" when both are present.
+#
 # The program reads a downloaded export by heading NAME, never by column position. Headings are compared
 # ignoring capital letters, spaces and punctuation, so "Over/Short", "over short" and "OVER-SHORT" are the same.
 # Extra columns and a different column order are fine. If a heading you need is missing from this list, the
@@ -26,3 +31,6 @@ over_short = ["Over/Short", "Cash Over/Short", "Over (Short)", "Short/Over", "Va
 net_sales = ["Net Sales", "Net Sale", "Total Net Sales"]
 # read, not used by any check
 deposit = ["Total Deposit", "Deposit Total", "Deposits", "Deposit"]
+# the classic export repeats the number of data rows in a column called __count on every row; it is used to
+# notice a partial file (the newer export has no such column)
+stated_count = ["__count"]

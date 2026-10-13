@@ -42,14 +42,25 @@ def safe_name(filename: str) -> str:
     return name[:120] or "export"
 
 
+def clean_expected_total(value) -> Optional[int]:
+    """The optional total the person read off R365's screen ("... of N items"). Anything else is ignored."""
+    try:
+        n = int(str(value).strip().replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+    return n if 0 <= n <= 10_000_000 else None
+
+
 def store_export(instance: Instance, filename: str, data: bytes, file_mtime: Optional[float] = None,
-                 now: Optional[datetime] = None, today: Optional[date] = None) -> dict:
+                 now: Optional[datetime] = None, today: Optional[date] = None,
+                 expected_total: Optional[int] = None) -> dict:
     """Keep a COPY of the chosen file in the program's own folder, after proving it can be read. The file the
     person chose is never opened for writing and never changed. Raises ExportError (plain words) and keeps
     any earlier copy untouched if this one is no good."""
     name = safe_name(filename)
     rows, stats, kind = read_rows(data, name)              # refuses non-tables, oversize files, macros ...
-    parsed = parse_export(rows, load_aliases(), instance.approval_words, _as_of(file_mtime), today, stats)
+    expected_total = clean_expected_total(expected_total)
+    parsed = parse_export(rows, load_aliases(), instance.approval_words, _as_of(file_mtime), today, stats, expected_total)
     now = now or datetime.now()
     d = export_dir(instance.id)
     d.mkdir(parents=True, exist_ok=True)
@@ -63,7 +74,7 @@ def store_export(instance: Instance, filename: str, data: bytes, file_mtime: Opt
     os.replace(part, final)
     meta = {"original_name": name, "stored_as": final.name, "received_at": now.isoformat(timespec="seconds"),
             "file_mtime": (_as_of(file_mtime).isoformat(timespec="seconds") if file_mtime else None),
-            "rows": parsed.rows_read, "size": len(data), "kind": kind}
+            "rows": parsed.rows_read, "size": len(data), "kind": kind, "expected_total": expected_total}
     _meta_path(instance.id).write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return meta
 
@@ -122,7 +133,7 @@ class DssExportSource(DataSource):
         rows, stats, _ = read_rows(data, meta["stored_as"])
         as_of = datetime.fromisoformat(meta["file_mtime"]) if meta.get("file_mtime") else None
         parsed = parse_export(rows, self.aliases or load_aliases(), self.instance.approval_words, as_of,
-                              self.today, stats)
+                              self.today, stats, clean_expected_total(meta.get("expected_total")))
         read_at = self.now or datetime.now()
         dated = f"dated {as_of:%Y-%m-%d %H:%M}" if as_of else "date not known"
         self.source_line = (f'Source: {SOURCE_WORDS} "{meta["original_name"]}", {dated}, '

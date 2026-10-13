@@ -14,6 +14,11 @@ The owner tested real R365 instances (no tenant details are recorded anywhere he
 
 So the program now has a **DSS export (file) source** (`docs/EXPORT_SOURCE.md`), which is the recommended one. The **OData connector is kept as optional and is labelled "does not provide approval or over/short; unproven against a live tenant"**. Everything below about OData describes only that optional connector.
 
+### Confirmed from the owner's testing, and what is still unknown
+
+- **Confirmed:** the exact classic and beta CSV headings (see `docs/EXPORT_SOURCE.md`); the Excel icon downloads a CSV; the classic file has a `__count` column and two status columns (`ApprovalStatus`, `Status`); the beta file starts with a byte-order mark and has no count; Over/Short looks like `-12.5000`.
+- **Still UNKNOWN:** the sign of Over/Short (the report words it neutrally); whether In Progress means Unapproved (only one matching pair seen); why one beta row was missing; whether `.xlsx` or `.tsv` can be downloaded at all; whether a very long list is paged or capped.
+
 ### Still UNKNOWN (not in the export, not checked from it)
 
 | Item | Status |

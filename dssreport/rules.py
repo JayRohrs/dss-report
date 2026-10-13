@@ -81,6 +81,10 @@ def money(value: Decimal) -> str:
     return f"${abs(value):,.2f}"
 
 
+def signed_money(value: Decimal) -> str:
+    return f"-${abs(value):,.2f}" if value < 0 else f"${value:,.2f}"
+
+
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}" + ("" if n == 1 else "s")
 
@@ -120,8 +124,13 @@ def evaluate_day(location: str, day: date, rec: Optional[DayRecord], cfg: Config
             if not c_cash:
                 add(CASH, UNKNOWN, "Cash over/short is blank")
         elif abs(v) > cfg.cash_limit:
-            direction = "short" if v < 0 else "over"
-            add(CASH, ISSUE, f"Cash is {money(v)} {direction} (limit {money(cfg.cash_limit)})")
+            if rec.cash_sign_known:
+                direction = "short" if v < 0 else "over"
+                add(CASH, ISSUE, f"Cash is {money(v)} {direction} (limit {money(cfg.cash_limit)})")
+            else:
+                # which sign means short is not proven for this source: show R365's own number as it is
+                add(CASH, ISSUE, f"Over/Short is {signed_money(v)} as R365 gives it "
+                                 f"(limit {money(cfg.cash_limit)} either way)")
 
     if on(RECEIPTS):
         n = rec.missing_receipts

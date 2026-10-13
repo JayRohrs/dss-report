@@ -1,9 +1,10 @@
 """Made-up sample DSS list exports, so a person can try the "DSS export file" source without R365.
 
 Everything here is invented: "Sample Group A", invented restaurants, invented amounts. Two layouts are made:
-  classic - the headings of R365's classic DSS list export
-  beta    - a guess at the newer list (different heading words, a title line, a "Total Records" footer),
-            covered by the heading-alias table; one real beta file is needed to confirm it
+  classic - the exact heading row of R365's classic DSS list export (CSV), with its __count column
+  beta    - the exact heading row of the newer ("beta") list export (CSV), with a byte-order mark and no count column
+The Excel and TSV samples hold the same tables; whether R365 offers those formats is unknown (the owner's
+tested export was CSV), so they only prove the reader copes with them.
 Also a tiny, dependency-free .xlsx writer (used for the Excel sample and by the tests).
 """
 
@@ -18,12 +19,15 @@ from typing import List, Optional, Sequence
 LOCATIONS = [("Sample Pier Grill", "101"), ("Sample Hill Bistro", "102"), ("Sample Dock Cafe", "103"),
              ("Sample Park Diner", "104")]
 
-CLASSIC_HEADERS = ["Approval Status", "Location", "Location Number", "Name", "Date", "Attachment", "Net Sales",
-                   "Total Deposit", "Over/Short", "Guest Count", "Steps Complete", "Log Entries", "Paidout Total",
-                   "Created By", "Created On", "Modified By", "Modified On"]
-BETA_HEADERS = ["Status", "Location Name", "Location #", "DSS Name", "Business Date", "Attachments", "Net Sales",
-                "Deposit Total", "Over (Short)", "Guests", "Steps Completed", "Log Entry Count", "Paid Outs",
-                "Created By", "Created", "Modified By", "Last Modified"]
+# The exact heading rows of two real exports, as observed by the owner's testing (CSV files):
+#   classic: UTF-8 without a BOM, comma, CRLF, heading on line 1, a __count column repeated on every row, no footer
+#   newer:   UTF-8 WITH a BOM, comma, CRLF, heading on line 1, no count column, no footer
+CLASSIC_HEADERS = ["ApprovalStatus", "Status", "Location", "LocationNumber", "Name", "Date", "NetSales", "TotalDeposit",
+                   "OverShort", "GuestCount", "StepsComplete", "CreatedBy", "CreatedOn", "ModifiedBy", "ModifiedOn",
+                   "DailySalesSummaryId", "PaidoutTotal", "__count", "NewFileName", "Attachment", "AttachmentLinkType",
+                   "FileLink", "LogEntries"]
+BETA_HEADERS = ["Status", "Location", "Date", "Attachments", "Net Sales", "Total Labor $", "Total Labor Hours",
+                "Labor %", "Total Deposit", "Over/Short", "Guest Count"]
 
 
 @dataclass
@@ -33,62 +37,69 @@ class Formula:
     cached: object = None
 
 
-def sample_rows(layout: str = "classic", today: Optional[date] = None, days: int = 14) -> List[List[object]]:
-    """Rows (list of cell values) for a made-up list ending on the business day before `today`.
+def _day_plan(offset: int, i: int, loc: str, day: date, last: date):
+    """(approved?, over/short) for one invented location and day. Planted for the last business day: one
+    approved, one unapproved (an over/short of -23.50) and one more unapproved/in-progress case; one location has
+    no row at all. Earlier days: approved, small amounts, one +12.00."""
+    over = [1.25, -0.5, 0.0, 2.0][(offset + i) % 4]
+    approved = True
+    if day == last:
+        approved, over = {"Sample Pier Grill": (True, 1.25), "Sample Hill Bistro": (False, -23.5),
+                          "Sample Dock Cafe": (True, 0.0)}[loc]
+    elif day == last - timedelta(days=3) and loc == "Sample Hill Bistro":
+        over = 12.0
+    return approved, over
 
-    Planted for the last business day: one entry Approved, one Unapproved with a $23.50 shortage, one In Progress
-    (approval unknown), and one location with no row at all. Earlier days: mostly Approved, one Completed,
-    one overage.
-    """
+
+def sample_rows(layout: str = "classic", today: Optional[date] = None, days: int = 14) -> List[List[str]]:
+    """Data rows as the strings a CSV holds, in the observed formats, for a made-up list ending on the business day
+    before `today`. In the newer layout 'Unapproved' does not exist: a not-approved entry is 'In Progress'."""
     today = today or date.today()
     last = today - timedelta(days=1)
     beta = layout == "beta"
-    rows: List[List[object]] = []
+    plan = []
     for offset in range(days):
         day = last - timedelta(days=days - 1 - offset)
         for i, (loc, num) in enumerate(LOCATIONS):
-            status, over = "Approved", [1.25, -0.5, 0.0, 2.0][(offset + i) % 4]
-            if day == last:
-                if loc == "Sample Park Diner":
-                    continue                                    # no row for the last day
-                status, over = {"Sample Pier Grill": ("Approved", 1.25), "Sample Hill Bistro": ("Unapproved", -23.5),
-                                "Sample Dock Cafe": ("In Progress", 0.0)}[loc]
-            elif day == last - timedelta(days=3) and loc == "Sample Hill Bistro":
-                over = 12.0
-            elif day == last - timedelta(days=4) and loc == "Sample Dock Cafe":
-                status = "Completed"
-            sales = round(3000 + 400 * i + 17 * offset, 2)
-            made = datetime(day.year, day.month, day.day, 6, 0) + timedelta(days=1)
-            rows.append([status, loc, num, f"DSS {day.isoformat()}", day, "", sales, round(sales * 0.97, 2), over,
-                         90 + offset + i, "5/5" if status != "In Progress" else "3/5", 2 + i, 0.0,
-                         "Sample User", made, "Sample User", made + timedelta(hours=1, minutes=30)])
+            if day == last and loc == "Sample Park Diner":
+                continue                                          # no row for the last day
+            plan.append((offset, i, loc, num, day) + _day_plan(offset, i, loc, day, last))
+    rows: List[List[str]] = []
+    for n, (offset, i, loc, num, day, approved, over) in enumerate(plan, start=1):
+        sales = round(3000 + 400 * i + 17 * offset, 2)
+        deposit = round(sales * 0.97, 2)
+        guests = 90 + offset + i
+        if beta:
+            status = "Approved" if approved else "In Progress"
+            if day == last and loc == "Sample Dock Cafe":
+                status = "In Progress"                           # the newer list's not-yet-approved word
+            rows.append([status, loc, day.strftime("%m/%d/%Y"), "No", f"{sales:.4f}", "0.0000", "0.0000000000", "0",
+                         f"{deposit:.4f}", f"{over:.4f}", str(guests)])
+        else:
+            made = datetime(day.year, day.month, day.day, 8, 15) + timedelta(days=1)
+            stamp = lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%S") + ".0000000Z"
+            rows.append(["Approved" if approved else "Unapproved", "Approved" if approved else "In Progress", loc, num,
+                         f"{loc} {day.strftime('%A')}, {day.strftime('%m/%d/%Y')}",
+                         f"{day.month}/{day.day}/{day.year} 12:00:00 AM", f"{sales:.4f}", f"{deposit:.4f}",
+                         f"{over:.4f}", str(guests), "Yes" if approved else "No", "", stamp(made), "Sample User",
+                         stamp(made + timedelta(minutes=45)), f"{n:08d}-0000-4000-8000-{n:012d}", "0.0000",
+                         str(len(plan)), "", "", "", "", ""])
     return rows
 
 
-def _fmt(value) -> str:
-    if isinstance(value, datetime):
-        return value.strftime("%m/%d/%Y %I:%M %p")
-    if isinstance(value, date):
-        return value.strftime("%m/%d/%Y")
-    if isinstance(value, float):
-        return f"{value:.2f}"
-    return "" if value is None else str(value)
-
-
-def table(layout: str = "classic", today: Optional[date] = None, days: int = 14) -> List[List[object]]:
-    """Heading rows + data rows (+ the classic list's shape, or the beta list's title line and footer)."""
-    data = sample_rows(layout, today, days)
-    if layout == "beta":
-        return ([["Daily Sales Summaries"], ["Sample Group A"], [], BETA_HEADERS] + data + [[], [f"Total Records: {len(data)}"]])
-    return [CLASSIC_HEADERS] + data
+def table(layout: str = "classic", today: Optional[date] = None, days: int = 14) -> List[List[str]]:
+    """Heading row + data rows exactly as the real CSVs have them (no title lines, no footer)."""
+    return [BETA_HEADERS if layout == "beta" else CLASSIC_HEADERS] + sample_rows(layout, today, days)
 
 
 def csv_bytes(layout="classic", today=None, delimiter=",", days: int = 14) -> bytes:
+    """The sample as a CSV file: CRLF line ends; the newer layout starts with a UTF-8 byte-order mark."""
     out = io.StringIO()
     w = csv.writer(out, delimiter=delimiter, lineterminator="\r\n")
     for row in table(layout, today, days):
-        w.writerow([_fmt(c) for c in row])
-    return out.getvalue().encode("utf-8")
+        w.writerow(row)
+    data = out.getvalue().encode("utf-8")
+    return (b"\xef\xbb\xbf" + data) if layout == "beta" else data
 
 
 # ------------------------------------------------------------------------------------------ tiny .xlsx writer

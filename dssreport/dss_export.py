@@ -33,11 +33,12 @@ HEADER_SCAN_ROWS = 40
 ALLOWED_EXTENSIONS = (".csv", ".tsv", ".txt", ".xlsx")
 ALIAS_FORMAT = 1
 
-FIELDS = ("location", "location_number", "business_date", "approval_status", "over_short", "net_sales", "deposit")
+FIELDS = ("location", "location_number", "business_date", "approval_status", "over_short", "net_sales", "deposit",
+          "stated_count")
 REQUIRED = ("location", "business_date")
 FIELD_WORDS = {"location": "Location", "location_number": "Location Number", "business_date": "Date",
                "approval_status": "Approval Status", "over_short": "Over/Short", "net_sales": "Net Sales",
-               "deposit": "Total Deposit"}
+               "deposit": "Total Deposit", "stated_count": "__count"}
 
 # what R365's status words are taken to mean. Only these two are ever turned into a yes/no by default.
 BUILT_IN_APPROVAL = {"approved": True, "unapproved": False}
@@ -462,10 +463,12 @@ class ParsedExport:
     last_date: Optional[date] = None
     first_date: Optional[date] = None
     layout_note: str = ""
+    total_source: str = ""                   # "file" (its own count) or "you" (typed by the user)
 
 
 _COUNT_PATTERNS = (
     re.compile(r"showing\s+\d+\s*(?:-|to|–)?\s*\d*\s*of\s+(\d+)", re.I),
+    re.compile(r"\b\d+\s*(?:-|to|–)\s*\d+\s+of\s+(\d+)\s+items?\b", re.I),
     re.compile(r"(?:total\s+)?(?:records?|rows?|items?|entries|results)\s*(?:found|returned)?\s*[:=]?\s*(\d+)\b", re.I),
     re.compile(r"\b(\d+)\s+(?:records?|rows?|items?|entries|results)\b", re.I),
     re.compile(r"\btotal\s*[:=]\s*(\d+)\s*$", re.I),
@@ -499,8 +502,8 @@ def clean_overrides(words: Dict[str, str]) -> Dict[str, bool]:
 
 
 def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Optional[Dict[str, str]] = None,
-                 as_of: Optional[datetime] = None, today: Optional[date] = None, stats: Optional[SheetStats] = None
-                 ) -> ParsedExport:
+                 as_of: Optional[datetime] = None, today: Optional[date] = None, stats: Optional[SheetStats] = None,
+                 expected_total: Optional[int] = None) -> ParsedExport:
     today = today or date.today()
     overrides = clean_overrides(approval_words or {})
     warnings: List[str] = []
@@ -635,7 +638,7 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
         records.append(DayRecord(
             location=loc, business_date=d, sales_total=sales, payments={}, cash_over_short=over,
             missing_receipts=None, payment_exceptions=None, approved=approved, pos_import_received=None,
-            approval_note=note, conflicts=tuple(conflicts)))
+            approval_note=note, conflicts=tuple(conflicts), cash_sign_known=False))
 
     # ---- plain statements about the file
     for f in missing:
@@ -643,11 +646,32 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
                "approval_status": ", so the approval check could not run",
                "net_sales": ", so the sales-total check could not run",
                "location_number": " (not needed by any check)", "deposit": " (not needed by any check)"}.get(f, "")
+        if f == "stated_count":
+            continue                                  # a missing count column is covered by the sentence about totals
         warnings.append(f"This file has no {FIELD_WORDS[f]} column{why}.")
-    total = max(stated) if stated else None
+    # the classic export carries its own row count in a column; the screen's total can be typed in by the user
+    counts = {cell(r, "stated_count") for r in data_rows} - {""} if "stated_count" in cols else set()
+    count_values = set()
+    for c in counts:
+        if re.fullmatch(r"\d{1,9}", c):
+            count_values.add(int(c))
+    if "stated_count" in cols and len(counts) > 1 or (counts and not count_values):
+        warnings.append("The __count column is not the same on every row (or not a number), so it was not used to "
+                        "check that the list is complete.")
+    elif len(count_values) == 1:
+        stated.append(next(iter(count_values)))
+    total, total_source = (max(stated), "file") if stated else (None, "")
+    if expected_total is not None and expected_total >= 0:
+        if total is None or expected_total > total:
+            total, total_source = expected_total, "you"
     if total is not None and rows_read < total:
-        warnings.insert(0, f"Partial list: the file says it holds {total} entries but only {rows_read} were read. "
+        who = ("the file says it holds" if total_source == "file" else "R365's screen shows")
+        warnings.insert(0, f"Partial list: {who} {total} entries but only {rows_read} were read. "
                            "Days or locations may be missing from it.")
+    elif total is None:
+        warnings.append("This file does not say how many entries it should hold, so a missing day cannot be told "
+                        "from an incomplete file. If R365's screen shows a total (\"... of N items\"), enter it when "
+                        "you choose the file.")
     if set_aside_date:
         warnings.append(f"{set_aside_date} row{'s' if set_aside_date != 1 else ''} had a Date that could not be "
                         "read and were set aside (not counted as any day).")
@@ -669,6 +693,11 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
     if stats and stats.errors:
         warnings.append(f"{stats.errors} Excel error cell{'s' if stats.errors != 1 else ''} were read as blank.")
 
+    all_words = {_canon_word(row["word"]) for g in by_day.values() for row in g if row["word"].strip()}
+    if "in progress" in all_words and "in progress" not in overrides and "unapproved" not in all_words:
+        warnings.append("This file uses 'In Progress' where the older list says 'Unapproved'. 'In Progress' is shown as "
+                        "UNKNOWN. If you have checked in R365 that it means not approved, set that for this connection "
+                        "under \"Extra meanings for status words\".")
     unmapped = {"missing_receipts", "payment_exceptions", "pos_import_received", "payments"}
     if "over_short" not in cols:
         unmapped.add("cash_over_short")
@@ -678,4 +707,4 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
         unmapped.add("sales_total")
     dates = [d for (_, d) in by_day]
     return ParsedExport(records, columns, unrecognised, missing, warnings, total, rows_read, unmapped,
-                        max(dates) if dates else None, min(dates) if dates else None, layout_note)
+                        max(dates) if dates else None, min(dates) if dates else None, layout_note, total_source)

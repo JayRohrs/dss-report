@@ -305,7 +305,8 @@ class SettingsApp:
                 else " Fill in its field mapping file (shown below) to turn \"needs mapping\" checks on."))
         return result, writes, deletes
 
-    def check_export(self, instance_id: str, filename: str, data: bytes, mtime_ms: str = "") -> tuple:
+    def check_export(self, instance_id: str, filename: str, data: bytes, mtime_ms: str = "",
+                     expected_total: str = "") -> tuple:
         """Keep a copy of the chosen DSS export file for one connection and check it. Read-only for the file
         the person chose, nothing leaves this computer. Returns (messages, report folder name)."""
         from datetime import timedelta
@@ -323,7 +324,8 @@ class SettingsApp:
             mtime = float(mtime_ms) / 1000.0 if mtime_ms else None
         except ValueError:
             mtime = None
-        meta = dss_export_source.store_export(inst, filename, data, mtime)
+        meta = dss_export_source.store_export(inst, filename, data, mtime,
+                                              expected_total=dss_export_source.clean_expected_total(expected_total))
         day = date.today() - timedelta(days=1)
         folder = f"{day.isoformat()}-{inst.id}-export"
         out = paths.reports_dir() / folder
@@ -627,6 +629,10 @@ class SettingsApp:
                        f'<input type="file" id="export_file_{n}" name="export" accept=".xlsx,.csv,.tsv,.txt" data-mtime="file_mtime_{n}">'
                        '<p class="hint">Choose the file you just downloaded. A file older than today cannot show today\'s '
                        'approval status, so download a fresh one each morning.</p></div>'
+                       f'<div class="row"><label for="expected_total_{n}">Total shown on the R365 screen (optional)</label>'
+                       f'<input type="number" id="expected_total_{n}" name="expected_total" min="0" step="1" placeholder="e.g. the N in &quot;1 - 250 of N items&quot;">'
+                       '<p class="hint">The newer list file does not say how many rows it should hold. If you type the total '
+                       'R365 shows at the bottom of the list, a file with fewer rows is flagged as a partial list.</p></div>'
                        '<button class="primary" type="submit">Check DSS export now</button></form></div>')
             script_on = True
         if script_on and self.nonce:
@@ -892,7 +898,8 @@ class _Handler(BaseHTTPRequestHandler):
                 if not files.get("export"):
                     raise DssError("Choose the DSS export file first.")
                 name = _upload_name(self.headers.get("Content-Type", ""), raw)
-                msgs, folder = app.check_export(fields.get("inst", ""), name, files["export"], fields.get("file_mtime", ""))
+                msgs, folder = app.check_export(fields.get("inst", ""), name, files["export"], fields.get("file_mtime", ""),
+                                                fields.get("expected_total", ""))
                 messages += msgs
             except DssError as exc:
                 problem = str(exc)

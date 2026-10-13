@@ -10,9 +10,13 @@ The program was first designed to read R365 through its OData connector. The own
 
 1. In R365 open the **classic** Daily Sales Summary list.
 2. Click the **Excel icon at the top right**, with **nothing ticked** in the list, so the export covers the whole list rather than selected rows.
-3. Save the downloaded file somewhere you can find it (Downloads is fine). `.xlsx`, `.csv` and `.tsv` files work.
+3. Save the downloaded file somewhere you can find it (Downloads is fine). In the owner's testing the Excel icon actually downloads a **CSV** file; whether R365 can also give `.xlsx` or `.tsv` is not known, but all three are read.
 
-R365's newer ("beta") DSS list has a slightly different layout and header wording, and the classic list is expected to go away. The program reads headings by **name**, not column position, and takes alternative wordings from a small list (below), so it should cope with both. **The beta layout's exact headings are an assumption**: they are covered by the alias list but have not been confirmed against a real beta file (see "What is not proven").
+R365's newer ("beta") DSS list has a slightly different layout and header wording, and the classic list is expected to go away. The program reads headings by **name**, not column position, and takes alternative wordings from a small list (below), so it copes with both. Both layouts' real headings are now known from the owner's testing (invented example rows in `tests/test_dss_export_real_layouts.py`):
+
+- **Classic** (23 columns): `ApprovalStatus, Status, Location, LocationNumber, Name, Date, NetSales, TotalDeposit, OverShort, GuestCount, StepsComplete, CreatedBy, CreatedOn, ModifiedBy, ModifiedOn, DailySalesSummaryId, PaidoutTotal, __count, NewFileName, Attachment, AttachmentLinkType, FileLink, LogEntries`. There are two status columns; the program uses **ApprovalStatus** (Approved / Unapproved), not the plain `Status`. `__count` repeats the total number of rows on every row, so the program uses it as the file's own total and can tell if rows are missing.
+- **Beta** (11 columns, starts with a byte-order mark): `Status, Location, Date, Attachments, Net Sales, Total Labor $, Total Labor Hours, Labor %, Total Deposit, Over/Short, Guest Count`. It has **no row count**, so completeness cannot be proven; the report says so and you may type the number of entries R365 shows into the **expected total** box to have it checked. Its status words include **In Progress**.
+- Over/Short comes as e.g. `-12.5000` and dates as `9/29/2026 12:00:00 AM` (classic) or `09/29/2026` (beta); both are read.
 
 ## Using it
 
@@ -80,7 +84,9 @@ These are **not** in the export and are not checked from it: **POS import status
 
 ## What is not proven
 
-- **No real R365 export was used** to build or test this. Every test uses made-up files ("Sample Group A", invented restaurants and amounts).
-- The **classic** headings are the ones the owner listed. The **beta** layout's exact headings, and whether its footer says "Total Records", are assumptions covered by the alias list; **one real beta file is needed to confirm them**.
-- The sign convention (negative = short, positive = over) is assumed from R365's usual meaning and should be checked against a known entry.
+- **No real R365 file is stored here.** The headings and formats come from the owner's notes; every test uses made-up files ("Sample ..." restaurants, invented amounts).
+- **The sign of Over/Short is not proven.** The report therefore says "Over/Short is -$23.50 as R365 gives it (limit $5.00 either way)" and never calls it over or short until one known entry confirms the convention.
+- **"In Progress" (beta) and "Unapproved" (classic) are not proven to be the same thing.** Only one matching pair has been seen. In Progress is treated as UNKNOWN unless you say what it means for a connection.
+- **One beta row was missing from a file with no explanation.** Without a row count in the beta layout this cannot be detected automatically; that is why the optional expected total exists.
+- **An unapproved day or a cash difference is not shown as the reason a DSS is unfinished.** The export says what the status and the number are, not why. It also does not show POS import health, receipt coverage, whether the books balance, or whether R365 would approve the day automatically.
 - Date order: R365 US exports are read month/day/year; a column that proves day-first is read that way, and a genuinely ambiguous column produces a plain warning.
