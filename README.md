@@ -22,7 +22,8 @@ Please read this before relying on it.
 | Part | Status |
 |---|---|
 | The checks, the report, UNKNOWN handling, HTML and email text, settings screen | Built and tested. |
-| Connection to Restaurant365 | Built and tested **only against a pretend server**. It has **never been run against a real R365 tenant**. R365's documentation does not clearly say which data holds the daily sales summary, so the field names are not filled in: the checks show **"needs mapping"** until someone confirms them. See [docs/R365_OPEN_QUESTIONS.md](docs/R365_OPEN_QUESTIONS.md). |
+| **R365 DSS export (file)** - the recommended source | Built. Tested **only with made-up files**: **no real R365 export was used**. It reads the Daily Sales Summary list you download from R365 yourself (CSV, TSV or Excel) and is the only source that carries approval status and cash over/short. The classic headings come from the owner's testing; the newer ("beta") layout's headings are an assumption that needs one real file to confirm. See [docs/EXPORT_SOURCE.md](docs/EXPORT_SOURCE.md). |
+| Connection to Restaurant365 through OData | **Optional. It does not provide approval or over/short, and is unproven against a live tenant.** Built and tested only against a pretend server. The owner's testing found OData does not expose those two figures at all. See [docs/R365_OPEN_QUESTIONS.md](docs/R365_OPEN_QUESTIONS.md). |
 | Licence (offline signed file), several R365 connections in one report, swappable data source | Built and tested (signature checking is checked against the published RFC 8032 test vectors and OpenSSL). No real licence key exists yet: the repository ships with none, and Jay Rohrs must add the public key before release ([docs/LICENSING.md](docs/LICENSING.md)). Several connections are tested only against pretend servers. |
 | Approval check | **On by default** (it is the point of the tool). With R365 it shows "needs mapping" and does not run until an approval field is mapped, then it runs by itself. The demo and CSV examples include a "not approved" entry so you can see it work. |
 | Email through Microsoft 365 | Built and tested only against a pretend Microsoft server. Not tried on a real account. |
@@ -35,6 +36,7 @@ Please read this before relying on it.
 - It does not fix problems, post entries, or contact anyone but you.
 - It does not check that the figures themselves are correct, only whether they trip a rule or are missing.
 - It is for Restaurant365 only.
+- It does not log in to R365 or drive a browser. **You** download the Daily Sales Summary list and choose the file; the program only reads it.
 - A check whose data it cannot get is **not run** and is listed in the report as "needs mapping". It never pretends everything is fine.
 
 ## Install on Windows (about 5 minutes)
@@ -63,7 +65,8 @@ Open `out/report.html` in your browser (and `out/email.txt` for the plain-text e
 Open it with the desktop shortcut or `python -m dssreport settings`. It is a page in your browser that only your own computer can reach. Every setting has a one-line explanation:
 
 - **Licence:** status in plain words, customer, connections used out of allowed, end date, updates date, and a button to load a licence file.
-- **Restaurant365 connections:** one block per connection (name, address, user name (Domain\Username), password, its own location choices). Add as many as your licence allows.
+- **Check a DSS export:** choose the file you downloaded from R365 and press "Check DSS export now".
+- **Restaurant365 connections:** one block per connection: its name, where its figures come from (the DSS export file, or the optional OData connector with an address, user name and password), its own location choices and, for the export, any extra meaning you give a status word. Add as many as your licence allows.
 - **Locations (inside each connection):** "only these locations" (optional), and a Show/Hide tick for each location that connection has sent, so a closed restaurant can be switched off.
 - **What counts as a problem:** a tick box and a number for each rule. They are saved into `rules.toml`, which you can still edit by hand.
 - **Email:** prepare a draft after each scheduled run; who it goes to; your Microsoft app ID; **send automatically** (off by default - otherwise you only get a draft); sign in to Microsoft 365.
@@ -78,9 +81,17 @@ A licence is a small signed file from Jay Rohrs: customer name, how many R365 co
 
 One licence can cover several connections. The report groups locations by connection. If one connection cannot be reached, the report says so at the top ("<name>: could not connect: <plain reason>"), those locations are UNKNOWN, and the other connections are still shown.
 
-### Connecting to R365
+### Connecting to R365: the DSS export (recommended)
 
-R365's address and your login come from R365 (their support enables the OData connector for your database). Enter them in settings and press **Save and test the connection**. The password is kept only in Windows Credential Manager, never in a file. Then the field mapping must be filled in once for each connection: run `python -m dssreport r365 discover` (add `--instance "<name>"` to pick one) to list what that database offers, and put the names in that connection's mapping file under `%LOCALAPPDATA%\DssReport\mappings\` (the settings screen shows the exact path; a template is in `r365_mapping.example.toml`). Until then the report says "needs mapping" for every check it cannot do.
+1. In R365 open the classic Daily Sales Summary list and click the **Excel icon at the top right** with nothing ticked. Save the file.
+2. In settings add a connection, choose **R365 DSS export file**, tick **Use this connection**, save.
+3. Under **Check a DSS export** choose the file and press **Check DSS export now**.
+
+It is read-only (nothing is changed in R365, nothing is sent anywhere, no sign-in or password), and it reads headings by name so a reordered or slightly different layout still works. `Approved` and `Unapproved` are understood; `In Progress`, `Completed` and any other word stay **UNKNOWN** with the word shown. A file older than today cannot show today's approval status, and the report says so. Everything is explained in [docs/EXPORT_SOURCE.md](docs/EXPORT_SOURCE.md). To try it with made-up data: `python -m dssreport demo-export --out samples/`.
+
+### The OData connector (optional; does not provide approval or over/short)
+
+R365's address and your login come from R365 (their support enables the OData connector for your database). Enter them in settings and press **Save and test this connection**. The password is kept only in Windows Credential Manager, never in a file. The field mapping must then be filled in once for each connection: run `python -m dssreport r365 discover` (add `--instance "<name>"` to pick one) to list what that database offers, and put the names in that connection's mapping file under `%LOCALAPPDATA%\DssReport\mappings\` (the settings screen shows the exact path; a template is in `r365_mapping.example.toml`). Until then the report says "needs mapping" for every check it cannot do. Because OData does not expose approval or over/short, those two checks cannot run through it.
 
 A restaurant that sends **no rows at all** is not listed, because the program does not guess which restaurants to expect. To be told when one goes quiet, add it under "Only these locations": it then shows as UNKNOWN. The report says this at the bottom.
 
@@ -102,7 +113,7 @@ The program reaches R365 through one interface, so a connector for the new API c
 
 ## Where your data stays
 
-On your computer. Licensing is checked locally and sends nothing. The program makes network calls only to places you set up (the complete list): your R365 address, Microsoft 365 if you turn email on, a language model on this same computer if you turn that on, and the update list address if you turn the optional update check on and press the button. No analytics, no tracking, nothing else. Reports are saved in `%LOCALAPPDATA%\DssReport\reports` (and `out/` for demo runs, which git ignores). The R365 password and Microsoft sign-in live only in the operating system's credential store.
+On your computer. Licensing is checked locally and sends nothing, and reading a DSS export file makes no network call at all. The program makes network calls only to places you set up (the complete list): your R365 OData address (only if you use that optional connector), Microsoft 365 if you turn email on, a language model on this same computer if you turn that on, and the update list address if you turn the optional update check on and press the button. No analytics, no tracking, nothing else. Reports are saved in `%LOCALAPPDATA%\DssReport\reports` (and `out/` for demo runs, which git ignores). The R365 password and Microsoft sign-in live only in the operating system's credential store.
 
 ## Security
 

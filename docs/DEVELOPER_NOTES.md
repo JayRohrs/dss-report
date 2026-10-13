@@ -39,6 +39,9 @@ CSV columns: `location, business_date (YYYY-MM-DD), sales_total, pay_<type> (any
 |---|---|
 | `rules.py`, `report.py` | the checks and the report facts |
 | `render.py` | HTML page and plain-text email |
+| `dss_export.py` | read a DSS list export (CSV/TSV/xlsx, stdlib only): safe file reading, heading aliases, parsing, freshness, conflicts, partial lists |
+| `dss_export_source.py`, `dss_export_sample.py` | the `dss-export` data source (stores a copy of the chosen file; no credentials) and made-up sample files + a tiny xlsx writer |
+| `data/dss_export_aliases.toml` | the documented heading list (a user file adds to it) |
 | `r365.py` | read-only OData client, field mapping, `$metadata` discovery |
 | `credstore.py` | OS credential store (Windows Credential Manager; Linux `secret-tool`) |
 | `graph.py` | Microsoft 365 sign-in (device code) and draft/send |
