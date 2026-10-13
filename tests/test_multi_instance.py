@@ -76,11 +76,11 @@ class TwoInstances(Env):
             self.assertEqual(len(s.report.clear), 1)
         self.assertIn("4 of 6 locations need a look", r.headline)
         self.assertIn("across 2 connections", r.headline)
-        html = res.html_path.read_text()
+        html = res.html_path.read_text(encoding="utf-8")
         self.assertLess(html.index("Sample Group A"), html.index("Demo Bistro North"))
         self.assertLess(html.index("Demo Bistro North"), html.index("Sample Group B"))
         self.assertLess(html.index("Sample Group B"), html.index("Sample Pier Grill"))
-        text = res.text_path.read_text()
+        text = res.text_path.read_text(encoding="utf-8")
         self.assertIn("SAMPLE GROUP B", text)
         self.assertIn("Sample Pier Grill [NEEDS REVIEW]", text)
         self.assertIn("UNKNOWN: Cash over/short is blank", text)    # blank required values stay UNKNOWN
@@ -145,7 +145,7 @@ class OneFailing(Env):
         self.assertEqual([s.name for s in r.failed_sections], ["Sample Group B"])
         self.assertTrue(r.failed_sections[0].error.startswith("could not connect: Could not reach R365"))
         self.assertEqual(len(r.ok_sections[0].report.attention), 2)         # A still fully reported
-        html, text = res.html_path.read_text(), res.text_path.read_text()
+        html, text = res.html_path.read_text(encoding="utf-8"), res.text_path.read_text(encoding="utf-8")
         self.assertIn("Sample Group B: could not connect:", html)
         self.assertLess(html.index("could not connect"), html.index("Demo Bistro North"))   # at the top
         self.assertIn("1 connection could not be reached", r.headline)
@@ -163,7 +163,7 @@ class OneFailing(Env):
             res = self.do_run()
         failed = res.report.failed_sections[0]
         self.assertIn("refused the sign-in", failed.error)
-        self.assertNotIn("wrong-secret-123", res.html_path.read_text() + res.text_path.read_text())
+        self.assertNotIn("wrong-secret-123", res.html_path.read_text(encoding="utf-8") + res.text_path.read_text(encoding="utf-8"))
         self.assertEqual(len(res.report.ok_sections), 1)
 
     def test_a_data_problem_in_one_connection_is_labelled_as_such(self):
@@ -184,7 +184,7 @@ class OneFailing(Env):
         self.assertTrue(res.all_failed)
         self.assertIn("None of the 2 connections could be reached", res.report.headline)
         self.assertIn("UNKNOWN", res.report.headline)
-        self.assertIn("Subject:", res.text_path.read_text())
+        self.assertIn("Subject:", res.text_path.read_text(encoding="utf-8"))
 
     def test_no_connection_set_up_is_a_plain_error(self):
         self.licence()
@@ -210,7 +210,7 @@ class LicenceAtRunTime(Env):
             res = self.do_run()
         self.assertTrue(res.all_failed)
         self.assertEqual(a.requests, [])
-        html = res.html_path.read_text()
+        html = res.html_path.read_text(encoding="utf-8")
         self.assertIn("Licence: not found", html)
         self.assertIn("not connected", html)
 
@@ -221,7 +221,7 @@ class LicenceAtRunTime(Env):
             res = self.do_run()
         self.assertIsInstance(res.report, Report)                # it connected and reported
         self.assertEqual(len(res.report.attention), 2)
-        html, text = res.html_path.read_text(), res.text_path.read_text()
+        html, text = res.html_path.read_text(encoding="utf-8"), res.text_path.read_text(encoding="utf-8")
         for t in (html, text):
             self.assertIn("Licence: expired on 2020-01-01", t)
 
@@ -230,13 +230,13 @@ class LicenceAtRunTime(Env):
         with MockR365() as a:
             self.add("Sample Group A", a.url)
             first = self.do_run()
-        saved = first.html_path.read_text()
+        saved = first.html_path.read_text(encoding="utf-8")
         (self.home / "licence.json").unlink()                    # licence disappears
         with MockR365() as a:
             self.instances[0].base_url = a.url
             save_settings(Settings(instances=self.instances))
             self.do_run()
-        self.assertEqual(first.html_path.read_text(), saved)     # the earlier report is exactly as it was
+        self.assertEqual(first.html_path.read_text(encoding="utf-8"), saved)     # the earlier report is exactly as it was
         self.assertTrue(first.html_path.exists())
 
     def test_valid_licence_shows_a_quiet_footer_line_not_a_warning(self):
@@ -244,14 +244,14 @@ class LicenceAtRunTime(Env):
         with MockR365() as a:
             self.add("Sample Group A", a.url)
             res = self.do_run()
-        html = res.html_path.read_text()
+        html = res.html_path.read_text(encoding="utf-8")
         self.assertIn("Licence: valid for Sample Customer Ltd", html)
         self.assertNotIn('class="warn">Licence:', html)
 
     def test_demo_data_needs_no_licence(self):
         res = run_report("demo", self.home / "out-demo")        # no licence installed at all
         self.assertIn("3 of 4 locations need a look", res.report.headline)
-        self.assertIn("demo mode", res.html_path.read_text())
+        self.assertIn("demo mode", res.html_path.read_text(encoding="utf-8"))
 
 
 class FeatureFlags(Env):
@@ -337,7 +337,7 @@ class FakeSecondSource(Env):
         texts = [f.text for f in res.report.attention[0].findings]
         self.assertIn("Cash is $9.00 short (limit $5.00)", texts)
         self.assertIn("Entry is not approved", texts)           # the same rules, unchanged
-        self.assertIn("Sample New Place", res.text_path.read_text())
+        self.assertIn("Sample New Place", res.text_path.read_text(encoding="utf-8"))
 
     def test_unknown_source_kind_is_a_plain_settings_error(self):
         with self.assertRaises(ConfigError) as cm:
@@ -404,7 +404,7 @@ class RenewalNoticeInReports(Env):
         with MockR365() as a:
             self.add("Sample Group A", a.url)
             res = self.do_run()
-        html, text = res.html_path.read_text(), res.text_path.read_text()
+        html, text = res.html_path.read_text(encoding="utf-8"), res.text_path.read_text(encoding="utf-8")
         note = "Licence expires in 9 days"
         self.assertIn(note, html)
         self.assertIn(note, text)
@@ -417,7 +417,7 @@ class RenewalNoticeInReports(Env):
         with MockR365() as a:
             self.add("Sample Group A", a.url)
             res = self.do_run()
-        self.assertNotIn("Licence expires in", res.html_path.read_text())
+        self.assertNotIn("Licence expires in", res.html_path.read_text(encoding="utf-8"))
 
     def test_expired_notice_is_at_the_top_and_the_report_is_still_made_in_full(self):
         self.licence(instances=1, expires=date(2020, 1, 1))
@@ -425,7 +425,7 @@ class RenewalNoticeInReports(Env):
             self.add("Sample Group A", a.url)
             res = self.do_run()
         note = "Licence expired on 2020-01-01 — renew to add connections or get updates."
-        html, text = res.html_path.read_text(), res.text_path.read_text()
+        html, text = res.html_path.read_text(encoding="utf-8"), res.text_path.read_text(encoding="utf-8")
         self.assertIn(note, html)
         self.assertLess(html.index(note), html.index("Needs a look"))
         self.assertIn(note, text)
@@ -438,7 +438,7 @@ class RenewalNoticeInReports(Env):
             self.add("Sample Group A", a.url)
             self.add("Sample Group B", b.url)
             res = self.do_run()
-        html = res.html_path.read_text()
+        html = res.html_path.read_text(encoding="utf-8")
         self.assertLess(html.index("Licence expires in 5 days"), html.index("Sample Group A</h2>"))
 
 

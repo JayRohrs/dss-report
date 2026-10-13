@@ -144,7 +144,9 @@ class SafetyAndErrors(unittest.TestCase):
         with self.assertRaises(InputError) as cm:
             c.get_metadata_xml()
         self.assertNotIn(PASSWORD, str(cm.exception))
-        self.assertIn("nothing answered at that address", str(cm.exception))
+        # Windows can time out on a closed port instead of refusing at once; both are plain, secret-free reasons
+        self.assertTrue("nothing answered at that address" in str(cm.exception)
+                        or "it took too long to answer" in str(cm.exception))
         self.assertNotIn("Errno", str(cm.exception))
 
 

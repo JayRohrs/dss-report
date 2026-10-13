@@ -794,7 +794,11 @@ class OnlineUpdates(Base):
         self.assertEqual(self.post({"action": "check"}, token="wrong", path="/updates")[0], 403)
 
     def test_a_tampered_list_is_reported_plainly_in_the_page(self):
-        self.host.files["/dss/manifest.json"] = self.host.files["/dss/manifest.json"].replace(b'"v": 1', b'"v": 1 ')[:-5] + b'    }\n'
+        import json
+        doc = json.loads(self.host.files["/dss/manifest.json"])   # change the signature itself, so line endings don't matter
+        sig = doc["signature"]
+        doc["signature"] = ("B" if sig[0] != "B" else "C") + sig[1:]
+        self.host.files["/dss/manifest.json"] = json.dumps(doc).encode()
         self.up(action="save", update_check_enabled="1", update_manifest_url=self.url)
         _, html = self.up(action="check", update_check_enabled="1", update_manifest_url=self.url)
         self.assertIn("update list", html)
