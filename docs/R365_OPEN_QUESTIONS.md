@@ -4,6 +4,34 @@ The rule for this product: follow R365's public documentation only, and **do not
 detail is not clearly documented, the program treats it as UNKNOWN, the matching check skips itself,
 and the report says "needs mapping".
 
+## What the owner's testing found (this changes the plan)
+
+The owner tested real R365 instances (no tenant details are recorded anywhere here) and found:
+
+- **The OData connector does NOT expose DSS approval status or cash over/short at all.** The two checks this program exists for ("entry not approved", "cash over or short") could therefore never run against a real tenant through OData.
+- **What does work is the Daily Sales Summary list export** that an R365 user downloads from the classic DSS list (the Excel/CSV icon). It carries these headings, among others: Approval Status, Location, Location Number, Name, Date, Attachment, Net Sales, Total Deposit, Over/Short, Guest Count, Steps Complete, Log Entries, Paidout Total, Created By, Created On, Modified By, Modified On. Approval Status is plain text: **"Approved"** or **"Unapproved"**.
+- R365's newer ("beta") DSS list export has a slightly different layout and header wording, and also a status word **"In Progress"** (and **"Completed"**). The classic layout is expected to go away.
+
+So the program now has a **DSS export (file) source** (`docs/EXPORT_SOURCE.md`), which is the recommended one. The **OData connector is kept as optional and is labelled "does not provide approval or over/short; unproven against a live tenant"**. Everything below about OData describes only that optional connector.
+
+### Confirmed from the owner's testing, and what is still unknown
+
+- **Confirmed:** the exact classic and beta CSV headings (see `docs/EXPORT_SOURCE.md`); the Excel icon downloads a CSV; the classic file has a `__count` column and two status columns (`ApprovalStatus`, `Status`); the beta file starts with a byte-order mark and has no count; Over/Short looks like `-12.5000`.
+- **Still UNKNOWN:** the sign of Over/Short (the report words it neutrally); whether In Progress means Unapproved (only one matching pair seen); why one beta row was missing; whether `.xlsx` or `.tsv` can be downloaded at all; whether a very long list is paged or capped.
+
+### Still UNKNOWN (not in the export, not checked from it)
+
+| Item | Status |
+|---|---|
+| POS import status | UNKNOWN. Not in the export. |
+| Anything equivalent to "missing receipts" | UNKNOWN. Not in the export (and possibly not an R365 concept at all). |
+| Payment exceptions | UNKNOWN. Not in the export. |
+| R365's own balancing flag | UNKNOWN. Not in the export. |
+| Who approved an entry, and when | UNKNOWN. Not in the export. |
+| The exact headings and footer of the beta list | ASSUMED (covered by the heading-alias list). One real beta file is needed to confirm. |
+| Meaning of `In Progress` / `Completed` for approval | UNKNOWN. Kept as the original word and shown as UNKNOWN. The owner may map a word per connection after checking it against a known case. |
+| Sign convention of Over/Short | ASSUMED negative = short, positive = over. Check against a known entry. |
+
 ## How this list was made (read this first)
 
 The build environment could not open R365's documentation website directly. What is written here comes
@@ -46,7 +74,7 @@ placeholders).
 | Paging | Public API lists use an `items` array and `nextLink`; OData normally uses `@odata.nextLink` | The connector accepts either and follows the link only if it stays on the same website. |
 | Public (non-OData) API | Early-adopter group, closed to new requests when last seen; token-based | **Not used.** |
 
-## Open questions (each one needs a person with a real tenant or R365 support)
+## Open questions about the optional OData connector (each one needs a person with a real tenant or R365 support)
 
 Close a question by running `python -m dssreport r365 discover` against your own tenant, reading R365's
 documentation for that entity, then filling in `r365_mapping.toml`.

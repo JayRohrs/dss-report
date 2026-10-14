@@ -47,6 +47,10 @@ class Report:
     licence_line: str = ""
     licence_problem: bool = False
     licence_notice: str = ""
+    # for sources that read a file: "Source: DSS export file ..." and plain warnings about it
+    source_line: str = ""
+    source_warnings: List[str] = field(default_factory=list)
+    needs_mapping_text: str = ""
 
     @property
     def total(self) -> int:
@@ -72,11 +76,11 @@ def _n(count: int, word: str) -> str:
 
 
 def make_headline(attention: int, unknown_only: int, total: int, label: str,
-                  skipped: int = 0) -> str:
+                  skipped: int = 0, why: str = "needs mapping") -> str:
     if total == 0:
         return "No locations were found in the data, so nothing could be checked. Status: UNKNOWN."
     clear = total - attention
-    caveat = (f" {_n(skipped, 'check')} could not run (needs mapping), so this is not a full all-clear."
+    caveat = (f" {_n(skipped, 'check')} could not run ({why}), so this is not a full all-clear."
               if skipped else "")
     if attention == 0:
         return (f"Nothing flagged: all {_n(total, 'location')} passed the checks that ran for {label}."
@@ -130,7 +134,8 @@ def skipped_checks(cfg: Config, unmapped=frozenset()) -> List[str]:
 
 
 def build_report(records: List[DayRecord], cfg: Config, end: Optional[date] = None,
-                 days: int = 1, source_name: str = "", unmapped=frozenset()) -> Report:
+                 days: int = 1, source_name: str = "", unmapped=frozenset(),
+                 unmapped_why: str = "needs mapping") -> Report:
     dates = window(records, end, days)
     by_key: Dict[tuple, DayRecord] = {(r.location, r.business_date): r for r in records}
     if cfg.include:
@@ -153,7 +158,7 @@ def build_report(records: List[DayRecord], cfg: Config, end: Optional[date] = No
     return Report(
         title=cfg.title, dates=dates, attention=attention, clear=clear,
         headline=make_headline(len(attention), unknown_only, len(results), date_label(dates),
-                               len(skipped)),
+                               len(skipped), unmapped_why),
         source_name=source_name, rules_note=rules_note(cfg, unmapped), needs_mapping=skipped)
 
 
@@ -232,7 +237,7 @@ def make_multi_headline(sections: List[Section], label: str, skipped: int) -> st
     attention = sum(len(s.report.attention) for s in ok)
     unknown_only = sum(s.report.unknown_only for s in ok)
     where = f"across {_n(len(ok), 'connection')}"
-    caveat = (f" {_n(skipped, 'check')} could not run (needs mapping), so this is not a full all-clear."
+    caveat = (f" {_n(skipped, 'check')} could not run (see below), so this is not a full all-clear."
               if skipped else "")
     fail_note = (f" {_n(failed, 'connection')} could not be reached, so {'its' if failed == 1 else 'their'} "
                  "locations are UNKNOWN.") if failed else ""

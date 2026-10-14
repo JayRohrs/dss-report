@@ -356,8 +356,8 @@ class ViewThenEmail(Base):
         status, html = self.seen("/report")
         self.assertEqual(status, 200)
         self.assertIn("Nothing has been emailed", html)
-        self.assertIn("3 of 4 locations need a look", html)
-        self.assertIn("Entry is not approved", html)
+        self.assertIn("1 unapproved (0 ready to approve, 1 with something flagged).", html)
+        self.assertIn("Needs to balance", html)
         self.assertIn("Create an email draft in Microsoft 365", html)
         self.assertIn("Open in my mail app", html)
 
@@ -419,7 +419,7 @@ class ViewThenEmail(Base):
         self.assertIn("Earlier reports", html)
         self.assertIn("d=2026-03-10", html)
         _, old = self.get(f"/report?t={self.server.token}&d=2026-03-10")
-        self.assertIn("3 of 4 locations need a look", old)
+        self.assertIn("1 unapproved (0 ready to approve, 1 with something flagged).", old)
         _, bad = self.get(f"/report?t={self.server.token}&d=../../etc")
         self.assertIn("was not found", bad)
 
@@ -566,7 +566,7 @@ class NoLicence(Base):
         res = run_report("demo", self.home / "reports" / "r1")      # demo data is never blocked
         save_state({"last_report_dir": str(res.html_path.parent)})
         _, html = self.get(f"/report?t={self.server.token}")
-        self.assertIn("3 of 4 locations need a look", html)
+        self.assertIn("1 unapproved (0 ready to approve, 1 with something flagged).", html)
         self.assertIn("Open in my mail app", html)
 
 

@@ -1,0 +1,20 @@
+# Words the brief report uses for "likely why this is not approved yet", in plain accounting terms.
+# These are LIKELY reasons taken from what the export shows. The export cannot say why a day is
+# unfinished, so the report always labels them "Likely" and never states them as the cause.
+#
+# To change a phrase without waiting for an update, put a file called reason_terms.toml in your DssReport
+# folder (%LOCALAPPDATA%\DssReport) with the same layout; its entries replace the matching ones here.
+# Use {value} where the number or count from the export should go. Keep a phrase short.
+
+version = 1
+
+# What to say when the export flags nothing else for an unapproved day.
+ready = "Ready to approve"
+
+[reasons]
+cash_variance = "Needs to balance: Over/Short {value}"
+missing_pos_import = "POS import not received"
+missing_receipts = "{value}"
+payment_exceptions = "{value}"
+payments_total = "Payments do not match sales"
+sales_blank = "Sales total is blank"

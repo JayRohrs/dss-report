@@ -258,7 +258,7 @@ cash_over_short = "mockCashOS"
         store.set(inst.credential_key, PASSWORD)
         with H.trusted_keys(), mock.patch("dssreport.runner.default_store", lambda: store):
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                code = main(["run", "--input", "r365", "--out", out, "--date", "2026-03-13"])
+                code = main(["run", "--input", "r365", "--out", out, "--date", "2026-03-13", "--full"])
         self.assertEqual(code, 0)
         return (Path(out) / "email.txt").read_text()
 
@@ -311,7 +311,7 @@ cash_over_short = "mockCashOS"
                 with H.trusted_keys(), mock.patch("dssreport.runner.default_store", lambda: store):
                     o, e = io.StringIO(), io.StringIO()
                     with redirect_stdout(o), redirect_stderr(e):
-                        code = main(["run", "--input", "r365", "--out", out, "--date", "2026-03-13"])
+                        code = main(["run", "--input", "r365", "--out", out, "--date", "2026-03-13", "--full"])
         self.assertEqual(code, 0, e.getvalue())
         html = (Path(out) / "report.html").read_text()
         self.assertIn("needs mapping", html.lower())

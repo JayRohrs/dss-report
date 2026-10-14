@@ -26,9 +26,10 @@ from .errors import DssError
 from .graph import GraphClient, deliver_email, scopes_for
 from .r365 import Mapping
 from .runner import load_rules
-from .state import load_state, seen_locations
+from .state import load_state, save_state, seen_locations
 from . import licence as lic
 from .settings import Instance, Settings, load_settings, save_settings, unique_id, validate
+from . import dss_export_source
 from .sources import build_source
 
 IDLE_SECONDS = 30 * 60
@@ -55,7 +56,7 @@ legend{font-weight:700;font-size:1.2rem;padding:0 8px}
 label{font-weight:600;display:block}
 .check{display:flex;gap:12px;align-items:flex-start;font-weight:600}
 .check input{width:28px;height:28px;flex:none;margin-top:2px}
-input[type=text],input[type=password],input[type=number],input[type=time],textarea{width:100%;font:inherit;
+select,input[type=text],input[type=password],input[type=number],input[type=time],textarea{width:100%;font:inherit;
 padding:10px;border:2px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
 textarea{min-height:5.5em}
 .hint{color:var(--muted);font-size:1rem;margin:2px 0 0}
@@ -112,6 +113,18 @@ def _field(name, value, label, hint, kind="text", extra="", placeholder=""):
             f'<p class="hint">{escape(hint)}</p></div>')
 
 
+SOURCE_CHOICES = [
+    (dss_export_source.KIND, "R365 DSS export file (carries approval status and cash over/short)"),
+    ("odata", "R365 OData connector (optional - does not provide approval or over/short; unproven against a live tenant)"),
+]
+
+
+def _select(name, value, label, hint, options):
+    opts = "".join(f'<option value="{escape(v)}"{" selected" if v == value else ""}>{escape(t)}</option>' for v, t in options)
+    return (f'<div class="row"><label for="{name}">{escape(label)}</label>'
+            f'<select id="{name}" name="{name}">{opts}</select><p class="hint">{escape(hint)}</p></div>')
+
+
 def _area(name, items, label, hint):
     return (f'<div class="row"><label for="{name}">{escape(label)}</label>'
             f'<textarea id="{name}" name="{name}">{escape(chr(10).join(items))}</textarea>'
@@ -133,6 +146,7 @@ class SettingsApp:
         self.rules_path = paths.resolve_rules_path(rules_path)
         self.graph_factory = graph_factory or (lambda st: GraphClient(st))
         self.device = None
+        self.nonce = ""              # set by the server: lets the one small script on the page run
         self.available = []          # versions listed by the last "Check for updates now" (this session only)
 
     @property
@@ -247,9 +261,10 @@ class SettingsApp:
                     hidden.append(vals[0].strip())
             inst = Instance(
                 id=old_inst.id, name=g(f"inst_name_{i}"), base_url=g(f"inst_url_{i}"), username=g(f"inst_user_{i}"),
-                enabled=on(f"inst_enabled_{i}"), source_kind=old_inst.source_kind,
+                enabled=on(f"inst_enabled_{i}"), source_kind=g(f"inst_kind_{i}", old_inst.source_kind) or old_inst.source_kind,
                 mapping_file=old_inst.mapping_file, credential_key=old_inst.credential_key,
-                include=_lines(g(f"inst_include_{i}")), hidden=hidden)
+                include=_lines(g(f"inst_include_{i}")), hidden=hidden,
+                approval_words=_parse_words(g(f"inst_words_{i}")) if f"inst_words_{i}" in f else dict(old_inst.approval_words))
             pw = f.get(f"inst_pw_{i}", [""])[0]
             if pw:
                 if not inst.username:
@@ -279,14 +294,47 @@ class SettingsApp:
             if reason:
                 raise DssError(reason)
             inst = Instance(id=unique_id(new_name, {r.id for r in old.instances} | {r.id for r in result}),
-                            name=new_name, base_url=g("new_url"), username=g("new_user"), enabled=True)
+                            name=new_name, base_url=g("new_url"), username=g("new_user"), enabled=True,
+                            source_kind=g("new_kind", dss_export_source.KIND) or dss_export_source.KIND)
             pw = f.get("new_pw", [""])[0]
             if pw:
                 writes.append((inst.credential_key, pw))
             result.append(inst)
-            msgs.append(f"Connection '{new_name}' added. Fill in its field mapping file (shown below) to "
-                        "turn \"needs mapping\" checks on.")
+            msgs.append(f"Connection '{new_name}' added." + (
+                " Choose a DSS export file for it under \"Check a DSS export\"." if inst.source_kind == dss_export_source.KIND
+                else " Fill in its field mapping file (shown below) to turn \"needs mapping\" checks on."))
         return result, writes, deletes
+
+    def check_export(self, instance_id: str, filename: str, data: bytes, mtime_ms: str = "",
+                     expected_total: str = "") -> tuple:
+        """Keep a copy of the chosen DSS export file for one connection and check it. Read-only for the file
+        the person chose, nothing leaves this computer. Returns (messages, report folder name)."""
+        from datetime import timedelta
+        from .runner import run_report
+        s = load_settings()
+        inst = s.instance(instance_id)
+        if inst is None or inst.source_kind != dss_export_source.KIND:
+            raise DssError("That is not a DSS export connection.")
+        if not inst.enabled:
+            raise DssError("Tick \"Connect\" for this connection and save first.")
+        status = lic.current_status()
+        if status.instances_allowed == 0:
+            raise DssError(status.message)
+        try:
+            mtime = float(mtime_ms) / 1000.0 if mtime_ms else None
+        except ValueError:
+            mtime = None
+        meta = dss_export_source.store_export(inst, filename, data, mtime,
+                                              expected_total=dss_export_source.clean_expected_total(expected_total))
+        day = date.today() - timedelta(days=1)
+        folder = f"{day.isoformat()}-{inst.id}-export"
+        out = paths.reports_dir() / folder
+        result = run_report("r365", out, end=day, only_instance=inst.id)
+        st = load_state()
+        st["last_report_dir"] = str(out)
+        save_state(st)
+        msgs = [f"Checked {meta['original_name']} ({meta['rows']} rows)."] + result.notes
+        return msgs, folder
 
     def install_update(self, raw: bytes) -> str:
         """Install an update file the owner sent. Checked here; nothing is downloaded."""
@@ -548,9 +596,55 @@ class SettingsApp:
         out.append('</fieldset>')
         return out
 
+    def _export_html(self, s: Settings, token: str) -> list:
+        e = escape
+        out = ['<fieldset><legend>3. Check a DSS export</legend>',
+               '<p class="hint"><strong>How this works.</strong> This is read-only. You download the Daily Sales '
+               'Summary list from R365 yourself (in the classic list, click the Excel icon at the top right with '
+               'nothing ticked) and choose the downloaded file here. This program reads a copy of it. Nothing is '
+               'changed in R365, nothing is sent anywhere, and no sign-in is needed.</p>']
+        exports = [i for i in s.instances if i.source_kind == dss_export_source.KIND]
+        if not exports:
+            out.append('<p class="hint">No connection uses the DSS export yet. Add one below (source: "R365 DSS '
+                       'export file"), save, then come back here.</p></fieldset>')
+            return out
+        script_on = False
+        for n, inst in enumerate(exports):
+            meta = dss_export_source.stored_info(inst.id)
+            if meta:
+                dated = (f"dated {meta['file_mtime'].replace('T', ' ')[:16]}" if meta.get("file_mtime")
+                         else "date not known")
+                last = (f"Last file: {meta['original_name']}, {dated}, read {meta['received_at'].replace('T', ' ')[:16]}, "
+                        f"{meta['rows']} rows.")
+            else:
+                last = "No file chosen yet."
+            out.append(f'<div class="card"><h3>{e(inst.name)}</h3><p class="state">{e(last)}</p>')
+            if not inst.enabled:
+                out.append('<p class="hint">This connection is switched off. Tick "Connect" below and save first.</p></div>')
+                continue
+            out.append(f'<form method="post" action="/export" enctype="multipart/form-data">'
+                       f'<input type="hidden" name="t" value="{e(token)}"><input type="hidden" name="inst" value="{e(inst.id)}">'
+                       f'<input type="hidden" name="file_mtime" id="file_mtime_{n}" value="">'
+                       f'<div class="row"><label for="export_file_{n}">DSS export file (.xlsx, .csv or .tsv)</label>'
+                       f'<input type="file" id="export_file_{n}" name="export" accept=".xlsx,.csv,.tsv,.txt" data-mtime="file_mtime_{n}">'
+                       '<p class="hint">Choose the file you just downloaded. A file older than today cannot show today\'s '
+                       'approval status, so download a fresh one each morning.</p></div>'
+                       f'<div class="row"><label for="expected_total_{n}">Total shown on the R365 screen (optional)</label>'
+                       f'<input type="number" id="expected_total_{n}" name="expected_total" min="0" step="1" placeholder="e.g. the N in &quot;1 - 250 of N items&quot;">'
+                       '<p class="hint">The newer list file does not say how many rows it should hold. If you type the total '
+                       'R365 shows at the bottom of the list, a file with fewer rows is flagged as a partial list.</p></div>'
+                       '<button class="primary" type="submit">Check DSS export now</button></form></div>')
+            script_on = True
+        if script_on and self.nonce:
+            out.append(f'<script nonce="{e(self.nonce)}">document.querySelectorAll("input[data-mtime]").forEach(function(i)'
+                       '{i.addEventListener("change",function(){var f=i.files[0],h=document.getElementById(i.getAttribute("data-mtime"));'
+                       'if(f&&h){h.value=String(f.lastModified);}});});</script>')
+        out.append('</fieldset>')
+        return out
+
     def _connections_html(self, s: Settings, status) -> list:
         e = escape
-        out = ['<fieldset><legend>3. Restaurant365 connections</legend>']
+        out = ['<fieldset><legend>4. Restaurant365 connections</legend>']
         if not s.instances:
             out.append('<p class="hint">No connection yet. Add one below.</p>')
         state = load_state()
@@ -567,23 +661,43 @@ class SettingsApp:
                 mapped = f"Field mapping problem: {exc}"
             out.append(f'<div class="card"><input type="hidden" name="inst_id_{i}" value="{e(inst.id)}">'
                        f'<h3>{e(inst.name)}</h3>')
-            out.append(_checkbox(f"inst_enabled_{i}", inst.enabled, "Connect to this Restaurant365",
-                                 "Reads its daily sales summaries, read-only. Nothing is ever changed in R365."))
+            is_export = inst.source_kind == dss_export_source.KIND
+            out.append(_checkbox(f"inst_enabled_{i}", inst.enabled, "Use this connection",
+                                 "Switch it on to include it in the report. Nothing is ever changed in R365."))
             out.append(_field(f"inst_name_{i}", inst.name, "Name", "How this connection is called in the report."))
-            out.append(_field(f"inst_url_{i}", inst.base_url, "R365 address",
-                              "The OData address your R365 contact gave you. It must start with https://.",
-                              placeholder="https://your-address-from-R365"))
-            out.append(_field(f"inst_user_{i}", inst.username, "User name",
-                              "The way R365 writes it: Domain\\Username.", placeholder="DOMAIN\\username"))
-            out.append(f'<div class="row"><label for="inst_pw_{i}">Password</label>'
-                       f'<input type="password" id="inst_pw_{i}" name="inst_pw_{i}" autocomplete="new-password">'
-                       '<p class="hint">Kept only in this computer\'s secure store, never in a file. '
-                       f'<span class="state">{"A password is saved." if pw_saved else "No password saved yet."}</span> '
-                       'Leave blank to keep the saved one.</p></div>')
-            out.append(_checkbox(f"inst_forget_{i}", False, "Forget the saved password", "Tick and Save to remove it from this computer."))
-            out.append(f'<button type="submit" name="action" value="test_r365:{e(inst.id)}">Save and test this connection</button>')
-            out.append(f'<p class="hint">Field mapping file (private, on this computer, never committed): '
-                       f'{e(str(inst.mapping_path))}. <span class="state">{e(mapped)}</span></p>')
+            out.append(_select(f"inst_kind_{i}", inst.source_kind, "Where its figures come from",
+                               "The DSS export is what carries approval status and cash over/short.", SOURCE_CHOICES))
+            if is_export:
+                out.append('<p class="hint">Read-only: you download the Daily Sales Summary list from R365 yourself and '
+                           'choose it under "Check a DSS export" above. No address, user name or password is needed.</p>')
+                seen = (dss_export_source.stored_info(inst.id) or {}).get("words_seen") or {}
+                if seen:
+                    unsettled = [w for w in seen if w.lower() not in ("approved", "unapproved")
+                                 and w.lower() not in {k.lower() for k in inst.approval_words}]
+                    out.append('<p class="hint">Status words in the last file: ' + e(", ".join(f"{w} ({n})" for w, n in seen.items()))
+                               + ". " + ("Not treated as approved or not approved (shown as UNKNOWN): "
+                                         + e(", ".join(unsettled)) + ". Set what they mean below only after checking "
+                                         "one against R365." if unsettled else "Every word has a meaning.") + '</p>')
+                out.append(_area(f"inst_words_{i}", [f"{w} = {m}" for w, m in inst.approval_words.items()],
+                                 "Extra meanings for status words (advanced, off by default)",
+                                 "Leave empty unless you have checked a word against a known case in R365. One per line, "
+                                 "for example:  In Progress = not approved. 'Approved' and 'Unapproved' cannot be changed. "
+                                 "Any other word stays UNKNOWN."))
+            else:
+                out.append(_field(f"inst_url_{i}", inst.base_url, "R365 address",
+                                  "The OData address your R365 contact gave you. It must start with https://.",
+                                  placeholder="https://your-address-from-R365"))
+                out.append(_field(f"inst_user_{i}", inst.username, "User name",
+                                  "The way R365 writes it: Domain\\Username.", placeholder="DOMAIN\\username"))
+                out.append(f'<div class="row"><label for="inst_pw_{i}">Password</label>'
+                           f'<input type="password" id="inst_pw_{i}" name="inst_pw_{i}" autocomplete="new-password">'
+                           '<p class="hint">Kept only in this computer\'s secure store, never in a file. '
+                           f'<span class="state">{"A password is saved." if pw_saved else "No password saved yet."}</span> '
+                           'Leave blank to keep the saved one.</p></div>')
+                out.append(_checkbox(f"inst_forget_{i}", False, "Forget the saved password", "Tick and Save to remove it from this computer."))
+                out.append(f'<button type="submit" name="action" value="test_r365:{e(inst.id)}">Save and test this connection</button>')
+                out.append(f'<p class="hint">Field mapping file (private, on this computer, never committed): '
+                           f'{e(str(inst.mapping_path))}. <span class="state">{e(mapped)}</span></p>')
             out.append(_area(f"inst_include_{i}", inst.include, "Only these locations (optional)",
                              "One per line, spelled as in R365. A listed location that sends nothing is shown as UNKNOWN. "
                              "A location that is not listed and sends no rows at all is not shown."))
@@ -606,8 +720,10 @@ class SettingsApp:
         reason = status.can_add_connection(len(s.enabled_instances))
         out.append(f'<p class="hint">{e(reason) if reason else "Fill these in and press Save settings."}</p>')
         out.append(_field("new_name", "", "Name", "For example the name of the restaurant group this R365 belongs to.", placeholder="a name for this connection"))
-        out.append(_field("new_url", "", "R365 address", "It must start with https://.", placeholder="https://your-address-from-R365"))
-        out.append(_field("new_user", "", "User name", "The way R365 writes it: Domain\\Username.", placeholder="DOMAIN\\username"))
+        out.append(_select("new_kind", dss_export_source.KIND, "Where its figures come from",
+                           "Choose the DSS export unless you have been told to use the OData connector.", SOURCE_CHOICES))
+        out.append(_field("new_url", "", "R365 address (OData connector only)", "Leave empty for the DSS export. It must start with https://.", placeholder="https://your-address-from-R365"))
+        out.append(_field("new_user", "", "User name (OData connector only)", "The way R365 writes it: Domain\\Username.", placeholder="DOMAIN\\username"))
         out.append('<div class="row"><label for="new_pw">Password</label><input type="password" id="new_pw" name="new_pw" autocomplete="new-password">'
                    '<p class="hint">Kept only in this computer\'s secure store.</p></div></div>')
         out.append('</fieldset>')
@@ -640,11 +756,12 @@ class SettingsApp:
             out.append(f'<p class="msg bad">{e(status.notice)}</p>')
         out += self._licence_html(status, s, token)
         out += self._updates_html(status, token)
+        out += self._export_html(s, token)
         out.append(f'<form method="post" action="/"><input type="hidden" name="t" value="{e(token)}">')
 
         out += self._connections_html(s, status)
 
-        out.append('<fieldset><legend>4. What counts as a problem</legend>')
+        out.append('<fieldset><legend>5. What counts as a problem</legend>')
         out.append(_checkbox("rule_pos", c.pos_enabled, "POS import missing", "Flag a day where the POS import did not arrive."))
         out.append(_checkbox("rule_cash", c.cash_enabled, "Cash over or short",
                              "Flag cash that is over or short by more than the limit below."))
@@ -660,7 +777,7 @@ class SettingsApp:
         out.append(_field("payments_tolerance", f"{c.payments_tolerance}", "Payments tolerance ($)", "How far apart they may be before it is flagged.", "number", 'step="0.01" min="0"'))
         out.append('<p class="hint">A location with no data, or a blank figure, is always shown as UNKNOWN. That cannot be switched off.</p></fieldset>')
 
-        out.append('<fieldset><legend>5. Email</legend>')
+        out.append('<fieldset><legend>6. Email</legend>')
         out.append(_checkbox("email_enabled", s.email_enabled, "Prepare an email each time the report runs",
                              "Puts the report in your own Microsoft 365 mailbox as a draft you can read and send."))
         out.append(_field("email_to", s.email_to, "Send the email to",
@@ -682,7 +799,7 @@ class SettingsApp:
             out.append(f'<p>Your code: <span class="code">{e(self.device.user_code)}</span></p>')
         out.append('</fieldset>')
 
-        out.append('<fieldset><legend>6. Schedule</legend>')
+        out.append('<fieldset><legend>7. Schedule</legend>')
         out.append(_checkbox("schedule_enabled", s.schedule_enabled, "Run the report automatically",
                              "Runs it on your computer at the time below and emails it if email is on."))
         out.append(_field("schedule_time", s.schedule_time, "Time of day", "Your computer's clock, 24-hour.", "time"))
@@ -692,7 +809,7 @@ class SettingsApp:
                    + '</div><p class="hint">Weekdays by default. If the computer was off, the report runs once when it next starts and is marked late.</p></div>')
         out.append('</fieldset>')
 
-        out.append('<fieldset><legend>7. Plain-language summary (optional)</legend>')
+        out.append('<fieldset><legend>8. Plain-language summary (optional)</legend>')
         out.append(_checkbox("ai_enabled", c.ai_enabled, "Add a one-sentence summary from a model on this computer",
                              "Off by default. The report is complete and correct without it; a summary that disagrees with the numbers is thrown away."))
         out.append(_field("ai_endpoint", c.ai_endpoint, "Model address", "Must be on this computer (localhost)."))
@@ -704,6 +821,17 @@ class SettingsApp:
         out.append(f'<p class="hint">Settings file: {e(str(paths.settings_path()))}<br>Rules file: {e(str(self.rules_path))}</p>')
         out.append('</main></body></html>')
         return "\n".join(out)
+
+
+def _parse_words(text: str) -> dict:
+    """'In Progress = not approved' lines -> {"In Progress": "not approved"}. Plain error if a line is malformed."""
+    out = {}
+    for ln in _lines(text):
+        word, sep, meaning = ln.partition("=")
+        if not sep or not word.strip() or not meaning.strip():
+            raise DssError("Each status word line must look like:  In Progress = not approved")
+        out[word.strip()] = meaning.strip()
+    return out
 
 
 def _lines(text: str):
@@ -735,7 +863,8 @@ class _Handler(BaseHTTPRequestHandler):
         # our Origin check (rightly) refuses. Same-origin keeps the one-time token from ever leaving this computer.
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Content-Security-Policy",
-                         "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'")
+                         f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{self.server.nonce}'; "
+                         "form-action 'self'; base-uri 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -751,7 +880,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        if n > (updates.MAX_TOTAL_BYTES + 100_000 if self.path == "/update" else 200_000):
+        if n > (updates.MAX_TOTAL_BYTES + 100_000 if self.path == "/update" else
+                dss_export_source.MAX_FILE_BYTES + 200_000 if self.path == "/export" else 200_000):
             return self._send(413, "<p>Too much data.</p>")
         raw = self.rfile.read(n)
         app, messages, problem = self.server.app, [], ""
@@ -766,6 +896,24 @@ class _Handler(BaseHTTPRequestHandler):
             except DssError as exc:
                 problem = str(exc)
             self.server.touch()
+            return self._send(200, app.render(self.server.token, messages, problem))
+        if self.path == "/export":
+            fields, files = _parse_multipart(self.headers.get("Content-Type", ""), raw)
+            if not self._ok_request(fields.get("t", "")):
+                return self._send(403, "<p>This page can only be used from the program.</p>")
+            folder = None
+            try:
+                if not files.get("export"):
+                    raise DssError("Choose the DSS export file first.")
+                name = _upload_name(self.headers.get("Content-Type", ""), raw)
+                msgs, folder = app.check_export(fields.get("inst", ""), name, files["export"], fields.get("file_mtime", ""),
+                                                fields.get("expected_total", ""))
+                messages += msgs
+            except DssError as exc:
+                problem = str(exc)
+            self.server.touch()
+            if folder and not problem:
+                return self._send(200, app.render_view(self.server.token, messages, "", folder))
             return self._send(200, app.render(self.server.token, messages, problem))
         if self.path == "/update":
             fields, files = _parse_multipart(self.headers.get("Content-Type", ""), raw)
@@ -824,6 +972,17 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(200, app.render(self.server.token, messages, problem))
 
 
+def _upload_name(content_type: str, body: bytes) -> str:
+    """The file name the browser sent for the first uploaded file."""
+    from email.parser import BytesParser
+    from email.policy import default
+    msg = BytesParser(policy=default).parsebytes(b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + body)
+    for part in msg.iter_parts() if msg.is_multipart() else []:
+        if part.get_filename() is not None:
+            return part.get_filename() or ""
+    return ""
+
+
 def _parse_multipart(content_type: str, body: bytes):
     """Read a small multipart/form-data body (the licence upload). Returns (fields, files)."""
     from email.parser import BytesParser
@@ -849,6 +1008,8 @@ class SettingsServer(HTTPServer):
         super().__init__(("127.0.0.1", port), _Handler)
         self.app = app
         self.token = secrets.token_urlsafe(24)
+        self.nonce = secrets.token_urlsafe(12)
+        app.nonce = self.nonce
         self._timer = None
         self.touch()
 

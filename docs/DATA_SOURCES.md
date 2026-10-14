@@ -2,7 +2,21 @@
 
 R365 is changing its API. This program keeps all R365 data access behind **one interface** (`DataSource` in `dssreport/sources.py`) so the current OData connector can be replaced by a connector for the new API **without touching the rules, the report, the email or the settings screen**.
 
-Status: only the OData connector exists (`dssreport/r365.py`). **No connector for the new API is built, and none of its details are guessed here.** This document describes the seam, not the new API.
+Status: two sources exist. **Neither is a connector for R365's new API; none of that API's details are guessed here.** This document describes the seam, not the new API.
+
+| `kind` | Module | What it is | Status |
+|---|---|---|---|
+| `dss-export` | `dss_export_source.py`, `dss_export.py` | Reads the DSS list **export file** the person downloaded from R365 (CSV, TSV, Excel). The recommended source: it carries approval status and cash over/short. No network, no credentials. | Built; tested with made-up files only. See `docs/EXPORT_SOURCE.md`. |
+| `odata` | `r365.py` | The OData connector. **Optional: does not provide approval or over/short; unproven against a live tenant.** | Built; tested against a mock only. |
+
+The owner's testing found that OData does not expose DSS approval status or cash over/short at all (see `docs/R365_OPEN_QUESTIONS.md`), which is why the file source exists. It plugs in through exactly this interface, with no change to the rules, report, email, schedule or licence logic beyond what the file's own statements need.
+
+### How a source that reads a file uses the same seam
+
+- `needs_credentials = False` tells the runner not to open the credential store for it (it may be given `store=None`).
+- The person's file is stored as a copy under the program's own folder; `load()` reads that copy. A connection with no file yet raises a plain `InputError` ("No DSS export file has been chosen...") shown as "could not read its data".
+- A source may describe itself to the report with three optional attributes: `source_line` ("Source: DSS export file ..., dated ..., read ..."), `source_warnings` (plain statements such as "Partial list" or "This file has no Over/Short column") and `unmapped_text` (why some checks could not run). The runner copies them into the report; the report and email show them under the headline.
+- `DayRecord` gained two optional fields for sources that know *why* something is unknown: `approval_note` (a status word that is not treated as approved/not approved, a file that is too old...) and `conflicts` (fields on which several source rows for one day disagreed). The rules turn them into UNKNOWN findings; they never turn them into a yes or no.
 
 ## What talks to what
 

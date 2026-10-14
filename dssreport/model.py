@@ -7,7 +7,7 @@ Every field except location and business_date may be None. None means
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -23,3 +23,11 @@ class DayRecord:
     payment_exceptions: Optional[int] = None
     approved: Optional[bool] = None
     pos_import_received: Optional[bool] = None
+    # Why approval is unknown, in words (a status word that is not treated as approved/not approved, a file
+    # that is too old, ...). Shown in the report as UNKNOWN; never turned into approved or not approved.
+    approval_note: Optional[str] = None
+    # Fields on which several source rows for this day disagreed (shown as UNKNOWN and listed as a conflict)
+    conflicts: Tuple[str, ...] = ()
+    # False when the source's sign convention for over/short is not proven (the DSS export): the report then
+    # shows R365's own signed figure and does not call it "over" or "short".
+    cash_sign_known: bool = True
