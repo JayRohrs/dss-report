@@ -56,7 +56,7 @@ You need Python 3.11 or newer. In a terminal, in this folder:
 
 `python -m dssreport run --input demo --out out/`
 
-Open `out/report.html` in your browser (and `out/email.txt` for the plain-text email). The demo has 4 made-up restaurants and 14 days of data with planted problems. The default view is the latest day and already shows a location with no data and a blank cash figure as **UNKNOWN**. To see every planted problem:
+Open `out/report.html` in your browser (and `out/email.txt` for the plain-text email). Both are the **brief report**: one row per place with **Place | Complete? | Flag**. "Complete?" means only that the export says Approved (Yes / No / Unknown). The longer report is kept beside it as `report-full.html` and `email-full.txt`; `--full` writes it as the main report instead. The demo has 4 made-up restaurants and 14 days of data with planted problems. The default view is the latest day and already shows a location with no data and a blank cash figure as **UNKNOWN**. To see every planted problem:
 
 `python -m dssreport run --input demo --out out/ --days 14`
 

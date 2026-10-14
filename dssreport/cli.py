@@ -25,6 +25,7 @@ def _parser():
                      help="'r365' (read-only, from your settings), 'demo', or a .csv/.json file/folder (demo and trials)")
     run.add_argument("--out", required=True, help="folder to write report.html and email.txt into")
     run.add_argument("--date", type=_parse_date, help="last business date to check (demo/files: latest in the data; r365: yesterday)")
+    run.add_argument("--full", action="store_true", help="write the long report instead of the brief one")
     run.add_argument("--days", type=int, default=1, help="how many days to check, ending on --date (default 1)")
     run.add_argument("--rules", help="rules file (default: see README)")
     run.add_argument("--ai", action="store_true", help="ask the local model for a summary sentence")
@@ -57,7 +58,8 @@ def _parser():
 
 def _run(args) -> int:
     result = run_report(args.input, args.out, end=args.date, days=args.days,
-                        rules_path=args.rules, ai=args.ai, email=args.email)
+                        rules_path=args.rules, ai=args.ai, email=args.email,
+                        style="full" if args.full else "brief")
     for note in result.notes:
         print(note, file=sys.stderr)
     print(result.report.headline)

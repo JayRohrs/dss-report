@@ -18,6 +18,15 @@ R365's newer ("beta") DSS list has a slightly different layout and header wordin
 - **Beta** (11 columns, starts with a byte-order mark): `Status, Location, Date, Attachments, Net Sales, Total Labor $, Total Labor Hours, Labor %, Total Deposit, Over/Short, Guest Count`. It has **no row count**, so completeness cannot be proven; the report says so and you may type the number of entries R365 shows into the **expected total** box to have it checked. Its status words include **In Progress**.
 - Over/Short comes as e.g. `-12.5000` and dates as `9/29/2026 12:00:00 AM` (classic) or `09/29/2026` (beta); both are read.
 
+## The brief report
+
+The report is one table, one row per place: **Place | Complete? | Flag**.
+
+- **Complete?** means one thing: the export says **Approved**. **No** = Unapproved. **Unknown** = no row for the day, a blank or unclear status (for example "In Progress"), a file older than today, conflicting rows, or a file with no approval column. It is never worked out from anything else.
+- **Flag** lists what the export shows, such as "Over/Short is -$23.50 as R365 gives it (limit $5.00 either way)", or what is missing. It states facts only. The export cannot say why a day is unfinished, so the report never claims a reason, and nothing here approves anything.
+- Not complete places come first, then unknown, then complete. File notes (what file, how old, what could not be checked) are one short line each above the table.
+- The longer report with the rules and sections is still written as `report-full.html` / `email-full.txt`.
+
 ## Using it
 
 1. In settings, **4. Restaurant365 connections**: add a connection, choose **"R365 DSS export file"** (no address, user name or password needed), tick **Use this connection** and save.

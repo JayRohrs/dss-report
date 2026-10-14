@@ -5,7 +5,7 @@ This is for whoever maintains the program. Reviewers do not need it.
 ## How the pieces fit
 
 ```
-data source ──► DayRecord list ──► rules (rules.toml) ──► Report ──► report.html + email.txt ──► (optional) Microsoft 365 draft
+data source ──► DayRecord list ──► rules (rules.toml) ──► Report ──► brief report.html + email.txt (long report kept as report-full.html / email-full.txt) ──► (optional) Microsoft 365 draft
 (R365 / demo / files)
 ```
 

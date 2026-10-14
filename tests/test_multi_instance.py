@@ -55,6 +55,7 @@ class Env(unittest.TestCase):
     def do_run(self, **kw):
         out = self.home / "out" / str(len(list((self.home / "out").glob("*"))) if (self.home / "out").exists() else 0)
         kw.setdefault("end", DAY)
+        kw.setdefault("style", "full")
         return run_report("r365", out, **kw)
 
 
@@ -249,7 +250,7 @@ class LicenceAtRunTime(Env):
         self.assertNotIn('class="warn">Licence:', html)
 
     def test_demo_data_needs_no_licence(self):
-        res = run_report("demo", self.home / "out-demo")        # no licence installed at all
+        res = run_report("demo", self.home / "out-demo", style="full")        # no licence installed at all
         self.assertIn("3 of 4 locations need a look", res.report.headline)
         self.assertIn("demo mode", res.html_path.read_text(encoding="utf-8"))
 
@@ -269,7 +270,7 @@ class FeatureFlags(Env):
 
     def test_demo_mode_has_the_optional_rule_available(self):
         (self.home / "rules.toml").write_text("[rules.payments_total]\nenabled = true\ntolerance = 0.01\n")
-        res = run_report("demo", self.home / "o", days=14)
+        res = run_report("demo", self.home / "o", days=14, style="full")
         self.assertIn("Payments add up to", " ".join(f.text for r in res.report.attention for f in r.findings))
 
     def test_local_ai_sentence_needs_its_flag(self):
@@ -283,7 +284,7 @@ class FeatureFlags(Env):
     def test_email_needs_its_flag_and_the_report_is_still_saved(self):
         save_settings(Settings(email_enabled=True, email_to="person@example.invalid"))
         self.licence(instances=1, features=["scheduling"])
-        res = run_report("demo", self.home / "o", email=True)
+        res = run_report("demo", self.home / "o", email=True, style="full")
         self.assertIn("The email was NOT created", res.email_outcome)
         self.assertIn("Email through Microsoft 365 is not included", res.email_outcome)
         self.assertTrue(res.html_path.exists())

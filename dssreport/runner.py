@@ -11,6 +11,7 @@ from .config import Config, load_config
 from .credstore import default_store, redact
 from .errors import ConnectionFailed, DssError, InputError
 from .paths import resolve_rules_path
+from .brief import brief_html, brief_text
 from .render import multi_subject, render_html, render_text
 from .report import MultiReport, Report, Section, build_multi_report, build_report, window
 from .rules import PAYMENTS_TOTAL
@@ -51,7 +52,8 @@ def _apply_licence_to_rules(cfg: Config, status: lic.LicenceStatus) -> None:
 
 def run_report(input_spec: str, out_dir, end: Optional[date] = None, days: int = 1,
                rules_path=None, ai: bool = False, late_note: str = "",
-               email: bool = False, adapter=None, only_instance: Optional[str] = None) -> RunResult:
+               email: bool = False, adapter=None, only_instance: Optional[str] = None,
+               style: str = "brief") -> RunResult:
     cfg = load_rules(rules_path)
     notes: List[str] = []
     if input_spec == "r365":
@@ -74,7 +76,11 @@ def run_report(input_spec: str, out_dir, end: Optional[date] = None, days: int =
         _add_summary(report, cfg, status, notes)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    html, text = render_html(report), render_text(report)
+    html, text = render_html(report), render_text(report)       # the long version, always kept
+    if style == "brief":
+        (out / "report-full.html").write_text(html, encoding="utf-8")
+        (out / "email-full.txt").write_text(text, encoding="utf-8")
+        html, text = brief_html(report), brief_text(report)
     (out / "report.html").write_text(html, encoding="utf-8")
     (out / "email.txt").write_text(text, encoding="utf-8")
     result = RunResult(report, out / "report.html", out / "email.txt", notes)
