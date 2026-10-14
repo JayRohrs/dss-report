@@ -20,12 +20,15 @@ R365's newer ("beta") DSS list has a slightly different layout and header wordin
 
 ## The brief report
 
-The report is one table, one row per place: **Place | Complete? | Flag**.
+The report only shows what is **still unapproved**, so it can be read in seconds.
 
-- **Complete?** means one thing: the export says **Approved**. **No** = Unapproved. **Unknown** = no row for the day, a blank or unclear status (for example "In Progress"), a file older than today, conflicting rows, or a file with no approval column. It is never worked out from anything else.
-- **Flag** lists what the export shows, such as "Over/Short is -$23.50 as R365 gives it (limit $5.00 either way)", or what is missing. It states facts only. The export cannot say why a day is unfinished, so the report never claims a reason, and nothing here approves anything.
-- Not complete places come first, then unknown, then complete. File notes (what file, how old, what could not be checked) are one short line each above the table.
-- The longer report with the rules and sections is still written as `report-full.html` / `email-full.txt`.
+- **Everything approved:** it says "Nothing outstanding to approve." and nothing else.
+- **Unapproved places:** one row each, with a **likely reason** in plain accounting words, for example "Needs to balance: Over/Short -$23.50" or "POS import not received". If the export flags nothing else the row says **Ready to approve**. Approved places are not listed, even if they have a cash difference.
+- **Could not tell:** places whose status cannot be established (no row, a blank or unclear status such as "In Progress", a file older than today, conflicting rows, or a file with no approval column) are listed under that heading. They are never counted as approved and never hidden.
+- **Reasons are likely, not proven.** The export cannot say why a day is unfinished, so the report never states a cause, and nothing here approves anything.
+- **Wording is the owner's to change.** The phrases live in `dssreport/data/reason_terms.toml`. Put a `reason_terms.toml` in your DssReport folder to change any of them without waiting for an update (a broken file is ignored, not fatal).
+- The longer report is still written as `report-full.html` / `email-full.txt`; `--full` makes it the main report.
+- Which places appear is your **"Only these locations"** list on each connection (and the hide list). There is no check for places that are missing from the file.
 
 ## Using it
 

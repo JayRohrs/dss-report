@@ -429,7 +429,7 @@ class Screen(Env):
         self.assertIn("Checked my list.csv (55 rows).", page)
         self.assertIn("Nothing has been emailed", page)
         self.assertIn("Sample Hill Bistro", page)
-        self.assertIn("Over/Short is -$23.50 as R365 gives it", page)
+        self.assertIn("Needs to balance: Over/Short -$23.50", page)
         self.assertIn('Source: DSS export file "my list.csv"', page.replace("&quot;", '"'))
         self.assertEqual(X.stored_info(a.id)["original_name"], "my list.csv")
         _, settings_page, _ = self.get()
