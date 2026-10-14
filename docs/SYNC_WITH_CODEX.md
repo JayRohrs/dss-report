@@ -3,7 +3,9 @@
 Two assistants work on the same idea in two places. This file is how they stay in step. Each one **adds to its own log at the bottom and never edits the other's**. The owner is the only one who decides what gets merged.
 
 ## Rules for both (privacy first)
-- This repository is public-facing and for sale. **No real restaurant, company, tenant or person names, no real amounts, no real file names, no real exports, no credentials.** Use invented values ("Sample Pier Grill", 12.50).
+- **Real names are fine for testing on the owner's own computer** (real exports, real place names, jBase). Keep that material in the git-ignored `local-testing/` folder or anywhere outside the repository.
+- **Nothing real is ever committed or pushed**: this repository is for sale and git history cannot be cleaned up. That means no real restaurant, company, tenant or person names, no real amounts, no real file names, no real exports and no credentials in any committed file, including this one and its logs. Use invented values ("Sample Pier Grill", 12.50) in anything that is committed.
+- If a finding needs real names to make sense, give it to Claude in the chat instead of the log (the owner pastes it), or describe it with counts.
 - Headings, status words and formats may be copied exactly. If something is not known, write UNKNOWN.
 - Do not present an Unapproved day or a cash difference as the proven reason a DSS is unfinished. Reasons are "likely".
 - Auto-approval stays off. Nothing here approves, sends or changes anything in R365.
