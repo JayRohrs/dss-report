@@ -43,6 +43,10 @@ Open the program and get the latest brief report for every R365 connection you h
 ## Safe description of a real export
 `python -m dssreport export inspect FILE` prints headings, counts, status words and formats only (no place names, amounts or ids). Paste its output into the hand-off file or chat to answer the open questions without exposing data.
 
+## Later (not started)
+- **Entries that need coding** go to the AM's folder. The DSS list export has no field for this, so the report cannot say it today (it would be UNKNOWN). An AI check that handles coding only comes after the rules are verified at 100%.
+- **Getting the list without a download** (decided: hold for now, manual export stays). Two routes to check later: (1) OData, if a real instance does expose approval status and over/short (earlier testing said it did not; `python -m dssreport r365 discover` lists exactly which fields an instance offers, so it settles this in one run); (2) the beta screen's own Export, driven by a local browser signed in with the owner's own account. That route is fragile (screens change, sign-in checks, R365's terms) and needs a separate, explicit go-ahead.
+
 ## Open next steps
 1. Run `export inspect` on a real export from each of the two instances and send the output (answers most open questions).
 2. Settle how the DSS list can reach the program without a manual download (ask R365 support, or see what R365 offers for scheduled reports).
