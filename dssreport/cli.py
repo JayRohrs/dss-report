@@ -45,7 +45,9 @@ def _parser():
                       help="test = check the sign-in; discover = list the entities and fields your tenant offers")
     r365.add_argument("--instance", help="the connection's name (default: the first one)")
     ex = sub.add_parser("export", help="the DSS export file source (read-only; nothing leaves this computer)")
-    ex.add_argument("action", choices=["load"], help="load = keep a copy of a DSS list file you downloaded from R365")
+    ex.add_argument("action", choices=["load", "inspect"],
+                    help="load = keep a copy of a DSS list file you downloaded from R365; "
+                         "inspect = describe a file (headings, counts, formats; no names or amounts) so it can be pasted safely")
     ex.add_argument("file")
     ex.add_argument("--instance", help="the connection's name (default: the first DSS export connection)")
     ex.add_argument("--expected-total", type=int, help="the total R365 shows on screen (\"... of N items\"), to notice a partial file")
@@ -123,6 +125,15 @@ def _update(args) -> int:
 
 
 def _export(args) -> int:
+    if args.action == "inspect":
+        from pathlib import Path as _Q
+        from .dss_inspect import inspect
+        from .errors import InputError as _IE
+        f = _Q(args.file)
+        if not f.is_file():
+            raise _IE("That is not a file.")
+        print(inspect(f.read_bytes(), f.name), end="")
+        return 0
     from pathlib import Path as _P
     import os as _os
     from .dss_export_source import KIND, store_export

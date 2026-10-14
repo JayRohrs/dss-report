@@ -17,6 +17,9 @@ Two assistants work on the same idea in two places. This file is how they stay i
 - Facts and unknowns: `docs/EXPORT_SOURCE.md`, `docs/R365_OPEN_QUESTIONS.md`, `docs/PROJECT_BRIEF.md`.
 - Branch with all of this: `phase4-dss-export` (PR #4, on top of PR #3). `main` does not have it yet.
 
+## Easiest way to answer: run the inspect command
+`python -m dssreport export inspect <file>` (on a checkout of `phase4-dss-export`) prints headings, counts, status words and formats with no names or amounts. Pasting its output for each real export answers questions 1, 3, 4, 5 and most of 6 at once.
+
 ## What Claude needs back from Codex (answer in the Codex log below, invented values only)
 1. For each real instance: do the headings match `docs/EXPORT_SOURCE.md`? List any heading that is new or different (headings only).
 2. Over/Short sign: one known shortage, and whether the file showed it negative or positive (invented amount).

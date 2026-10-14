@@ -670,6 +670,14 @@ class SettingsApp:
             if is_export:
                 out.append('<p class="hint">Read-only: you download the Daily Sales Summary list from R365 yourself and '
                            'choose it under "Check a DSS export" above. No address, user name or password is needed.</p>')
+                seen = (dss_export_source.stored_info(inst.id) or {}).get("words_seen") or {}
+                if seen:
+                    unsettled = [w for w in seen if w.lower() not in ("approved", "unapproved")
+                                 and w.lower() not in {k.lower() for k in inst.approval_words}]
+                    out.append('<p class="hint">Status words in the last file: ' + e(", ".join(f"{w} ({n})" for w, n in seen.items()))
+                               + ". " + ("Not treated as approved or not approved (shown as UNKNOWN): "
+                                         + e(", ".join(unsettled)) + ". Set what they mean below only after checking "
+                                         "one against R365." if unsettled else "Every word has a meaning.") + '</p>')
                 out.append(_area(f"inst_words_{i}", [f"{w} = {m}" for w, m in inst.approval_words.items()],
                                  "Extra meanings for status words (advanced, off by default)",
                                  "Leave empty unless you have checked a word against a known case in R365. One per line, "

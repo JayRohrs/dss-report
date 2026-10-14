@@ -72,11 +72,27 @@ def store_export(instance: Instance, filename: str, data: bytes, file_mtime: Opt
         if old.name != final.name and not old.name.endswith(".part"):
             old.unlink()
     os.replace(part, final)
-    meta = {"original_name": name, "stored_as": final.name, "received_at": now.isoformat(timespec="seconds"),
+    meta = {"words_seen": _words_seen(rows), "original_name": name, "stored_as": final.name, "received_at": now.isoformat(timespec="seconds"),
             "file_mtime": (_as_of(file_mtime).isoformat(timespec="seconds") if file_mtime else None),
             "rows": parsed.rows_read, "size": len(data), "kind": kind, "expected_total": expected_total}
     _meta_path(instance.id).write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return meta
+
+
+def _words_seen(rows) -> dict:
+    """How many rows have each approval/status word (words only: no place, amount or id)."""
+    aliases = load_aliases()
+    for i, row in enumerate(rows[:40]):
+        found, _ = aliases.match(row)
+        if "approval_status" in found and "location" in found and "business_date" in found:
+            c = found["approval_status"]
+            out: dict = {}
+            for r in rows[i + 1:]:
+                w = r[c].strip() if c < len(r) else ""
+                if w and len(w) <= 40:
+                    out[w] = out.get(w, 0) + 1
+            return dict(sorted(out.items(), key=lambda kv: -kv[1])[:8])
+    return {}
 
 
 def _as_of(file_mtime: Optional[float]) -> Optional[datetime]:

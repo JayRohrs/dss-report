@@ -35,7 +35,15 @@ The standalone program's updates are owner-signed packages (`docs/UPDATES.md`). 
 ## Local AI (later)
 Optional and off. An Ollama-style local model could write the one-line summary or, once every rule is verified 100%, assist with the approval review. It is not needed for the brief report today, and nothing sends data off the computer.
 
+## How it is meant to be used
+Open the program and get the latest brief report for every R365 connection you have added (one per R365 subdomain). Emailing it is an option you switch on in settings; it is not the main way of reading it. `python -m dssreport run-now` (or the Run now shortcut) already builds the brief from each connection's latest stored DSS list and opens it.
+
+**The gap:** the DSS list export (the only source of approval status and over/short) is currently a file a person downloads from R365. Until the program can fetch that list itself, "latest" means the newest file chosen for each connection, and the report says how old each file is. Getting the list without a download needs a way R365 supports (a scheduled export or report delivery, or an API that carries these fields). That is not established. The OData connector cannot supply it, and the program does not drive R365's web pages.
+
+## Safe description of a real export
+`python -m dssreport export inspect FILE` prints headings, counts, status words and formats only (no place names, amounts or ids). Paste its output into the hand-off file or chat to answer the open questions without exposing data.
+
 ## Open next steps
-1. Merge PR #3 and PR #4 so `main` carries this work and jBase can follow it.
-2. Confirm the Over/Short sign and the In Progress meaning from real files (outside this repo).
-3. Ask R365 whether the DSS list export can be scheduled; then add a watched-folder pickup before 6 AM.
+1. Run `export inspect` on a real export from each of the two instances and send the output (answers most open questions).
+2. Settle how the DSS list can reach the program without a manual download (ask R365 support, or see what R365 offers for scheduled reports).
+3. Merge PR #3 and PR #4 so `main` carries this work and jBase can follow it.

@@ -421,6 +421,19 @@ class Screen(Env):
         self.assertIn("default-src 'none'", headers["Content-Security-Policy"])
         self.assertNotRegex(html, r"<script[^>]+src=")                 # no outside script, ever
 
+    def test_the_settings_page_lists_the_status_words_seen_and_which_are_unsettled(self):
+        a = inst()
+        self.connect(a)
+        X.store_export(a, "b.csv", S.csv_bytes("beta", TODAY), NOW.timestamp())
+        _, page, _ = self.get()
+        self.assertIn("Status words in the last file: Approved (", page)
+        self.assertIn("In Progress (2)", page)
+        self.assertIn("shown as UNKNOWN): In Progress", page)
+        self.assertNotIn("1 Unapproved", page)
+        self.connect(inst(approval_words={"In Progress": "not approved"}))
+        _, page, _ = self.get()
+        self.assertIn("Every word has a meaning.", page)
+
     def test_choosing_a_file_checks_it_and_shows_the_report_with_nothing_emailed(self):
         a = inst()
         self.connect(a)
