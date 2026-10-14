@@ -98,9 +98,16 @@ def ask_model(prompt: str, cfg: Config) -> str:
         return json.loads(resp.read().decode())["response"]
 
 
-def add_summary(report: Report, cfg: Config, ask=ask_model) -> str:
+def add_summary(report: Report, cfg: Config, ask=ask_model, failed: int = 0) -> str:
     """Fill report.summary_sentence. Returns a note for the console (empty if all went well)."""
     note = ""
+    if failed:
+        # a connection that could not be reached means the facts are incomplete: never let a model
+        # sentence imply otherwise, use the plain template
+        report.summary_sentence = (standard_sentence(report) + f" {failed} connection"
+                                   f"{' was' if failed == 1 else 's were'} not reached (UNKNOWN).")
+        report.summary_source = "template"
+        return ""
     try:
         sentence = ask(_facts_prompt(report), cfg).strip().strip('"').strip()
         if sentence_agrees(sentence, report):

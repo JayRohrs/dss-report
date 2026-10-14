@@ -33,11 +33,16 @@ def _parser():
     sub.add_parser("scheduled-run", help="what the schedule runs (does nothing if not due)")
     sub.add_parser("run-now", help="run the R365 report for yesterday now and open it")
     sub.add_parser("forget-secrets", help="remove the saved R365 password and Microsoft 365 sign-in from this computer")
+    upd = sub.add_parser("update", help="install an update file you were sent (checked here; nothing goes online)")
+    upd.add_argument("action", choices=["install", "rollback", "status", "check", "download"],
+                     help="check/download use the OPTIONAL online update list (off unless switched on in settings)")
+    upd.add_argument("file", nargs="?", help="install: the update file; download: the version to fetch")
     sch = sub.add_parser("schedule", help="turn the Windows schedule on or off")
     sch.add_argument("action", choices=["install", "remove"])
     r365 = sub.add_parser("r365", help="read-only helpers for the R365 connection")
     r365.add_argument("action", choices=["test", "discover"],
                       help="test = check the sign-in; discover = list the entities and fields your tenant offers")
+    r365.add_argument("--instance", help="the connection's name (default: the first one)")
     demo = sub.add_parser("demo-data", help="write the made-up demo data as CSV and JSON files")
     demo.add_argument("--out", required=True, help="folder to write into")
     return p
@@ -72,14 +77,49 @@ def _run_now() -> int:
     return serve(path="/report")
 
 
+def _update(args) -> int:
+    from . import __release_date__, __version__
+    from . import licence as lic
+    from . import updates
+    if args.action == "status":
+        s = lic.current_status()
+        print(f"Installed version {__version__} (released {__release_date__}).")
+        print(s.message)
+        if s.licence:
+            print(f"Updates: {s.licence.updates_text()}.")
+        print("An earlier version is saved and can be restored." if updates.has_backup() else "No earlier version is saved.")
+    elif args.action in ("check", "download"):
+        from . import update_check
+        from .settings import load_settings
+        s = load_settings()
+        if not s.update_check_enabled:
+            raise updates.UpdateError("Online update checking is switched off. Switch it on in settings first.")
+        found = update_check.check(s.update_manifest_url, __version__)
+        if args.action == "check":
+            print("\n".join(f"Version {a.version} (released {a.release_date.isoformat()}) {a.notes}".rstrip() for a in found)
+                  or "You have the newest version that is listed.")
+        else:
+            entry = next((a for a in found if a.version == args.file), None)
+            if entry is None:
+                raise updates.UpdateError("Say which listed version to download, for example: update download 0.4.0")
+            path = update_check.download(s.update_manifest_url, entry, lic.current_status())
+            print(f"Downloaded and checked: {path}. Install it with: update install \"{path}\"")
+    elif args.action == "rollback":
+        print(updates.rollback())
+    else:
+        if not args.file:
+            raise updates.UpdateError("Say which update file to install, for example: update install my-update.dssupdate")
+        print(updates.apply_update(args.file, lic.current_status()))
+    return 0
+
+
 def _forget() -> int:
     from .credstore import default_store
     from .graph import SESSION_KEY
-    from .r365 import credential_name
     from .settings import load_settings
     store, s = default_store(), load_settings()
-    if s.r365_username:
-        store.delete(credential_name(s.r365_username))
+    for inst in s.instances:
+        store.delete(inst.credential_key)
     store.delete(SESSION_KEY)
     print("Saved passwords and sign-ins were removed from this computer.")
     return 0
@@ -87,13 +127,22 @@ def _forget() -> int:
 
 def _r365(args) -> int:
     from .credstore import default_store
-    from .r365 import check_connection, discover
+    from .errors import InputError
     from .settings import load_settings
-    settings, store = load_settings(), default_store()
+    from .sources import build_source
+    settings = load_settings()
+    if not settings.instances:
+        raise InputError("No R365 connection is set up yet. Open settings and add one.")
+    wanted = (args.instance or "").strip().lower()
+    inst = next((i for i in settings.instances if not wanted or wanted in (i.name.lower(), i.id)), None)
+    if inst is None:
+        raise InputError(f"There is no connection called '{args.instance}'. "
+                         f"You have: {', '.join(i.name for i in settings.instances)}.")
+    source = build_source(inst, default_store())
     if args.action == "test":
-        print(check_connection(settings, store))
+        print(f"{inst.name}: {source.check_connection()}")
     else:
-        print("\n".join(discover(settings, store)))
+        print("\n".join(source.describe()))
     return 0
 
 
@@ -114,6 +163,8 @@ def main(argv=None) -> int:
             from .settings import load_settings
             print(scheduled_run(load_settings()))
             return 0
+        if args.command == "update":
+            return _update(args)
         if args.command == "run-now":
             return _run_now()
         if args.command == "forget-secrets":

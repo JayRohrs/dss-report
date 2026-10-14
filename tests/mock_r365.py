@@ -50,12 +50,12 @@ def rows():
 
 
 class MockR365(HTTPServer):
-    def __init__(self, extra_rows=None):
+    def __init__(self, extra_rows=None, rows_override=None):
         super().__init__(("127.0.0.1", 0), Handler)
-        self.data = rows() + list(extra_rows or [])
+        self.data = (rows() if rows_override is None else list(rows_override)) + list(extra_rows or [])
         self.requests = []     # (method, path, had_auth)
         self.foreign_link = None
-        self.thread = threading.Thread(target=self.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
 
     @property
     def url(self):
@@ -117,3 +117,23 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404)
 
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _any
+
+
+RENAMES = {"Demo Bistro North": "Sample Pier Grill", "Demo Grill East": "Sample Hill Bistro",
+           "Demo Cafe South": "Sample Dock Cafe", "Demo Diner West": "Sample Park Diner"}
+
+
+def alt_rows():
+    """The same made-up shapes under different made-up restaurant names (a second R365 instance)."""
+    return [{**r, "mockLocation": RENAMES[r["mockLocation"]]} for r in rows()]
+
+
+def mapping_toml(m=None, version=None):
+    """Write a mapping dict out as TOML text (tests only)."""
+    m = MAPPING if m is None else m
+    out = [] if version is None else [f"version = {version}"]
+    for section, body in m.items():
+        out.append(f"[{section}]")
+        for k, v in body.items():
+            out.append(f"{k} = " + ("[" + ", ".join(f'"{x}"' for x in v) + "]" if isinstance(v, list) else f'"{v}"'))
+    return "\n".join(out) + "\n"

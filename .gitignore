@@ -40,3 +40,10 @@ state.json
 task.xml
 run.log
 reports/
+
+# Licence signing keys: the PRIVATE key never goes in this repo (see docs/LICENSING.md).
+*.private.key
+*.pem
+/keys/
+/tools/keys/
+licence.json

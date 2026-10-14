@@ -16,7 +16,7 @@ class MockGraph(HTTPServer):
         self.drafts = {}
         self.sent = []
         self.refresh_ok = True
-        self.thread = threading.Thread(target=self.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
 
     @property
     def base(self):

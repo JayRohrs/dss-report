@@ -1,4 +1,5 @@
-# Restaurant365 field mapping - copy to your DssReport folder as r365_mapping.toml and fill in.
+# Restaurant365 field mapping - one file PER CONNECTION. Copy to your DssReport folder as
+# mappings\<connection-id>.toml (the settings screen shows the exact path) and fill in.
 #
 # WHY THIS FILE EXISTS
 # The R365 documentation we could follow does not clearly say which OData entity holds
@@ -7,6 +8,10 @@
 # R365 tenant (run:  python -m dssreport r365 discover  to list what the tenant offers).
 # A check whose field is empty is skipped and shown in the report as "needs mapping".
 # See docs/R365_OPEN_QUESTIONS.md.
+
+# Format of this file. A connector says which format(s) it reads; a file in another format is refused
+# with a plain message. Leave this as 1 for the current OData connector.
+version = 1
 
 [source]
 entity = ""                 # the entity set that has one row per location per business day

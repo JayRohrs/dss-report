@@ -23,6 +23,7 @@ Please read this before relying on it.
 |---|---|
 | The checks, the report, UNKNOWN handling, HTML and email text, settings screen | Built and tested. |
 | Connection to Restaurant365 | Built and tested **only against a pretend server**. It has **never been run against a real R365 tenant**. R365's documentation does not clearly say which data holds the daily sales summary, so the field names are not filled in: the checks show **"needs mapping"** until someone confirms them. See [docs/R365_OPEN_QUESTIONS.md](docs/R365_OPEN_QUESTIONS.md). |
+| Licence (offline signed file), several R365 connections in one report, swappable data source | Built and tested (signature checking is checked against the published RFC 8032 test vectors and OpenSSL). No real licence key exists yet: the repository ships with none, and Jay Rohrs must add the public key before release ([docs/LICENSING.md](docs/LICENSING.md)). Several connections are tested only against pretend servers. |
 | Approval check | **On by default** (it is the point of the tool). With R365 it shows "needs mapping" and does not run until an approval field is mapped, then it runs by itself. The demo and CSV examples include a "not approved" entry so you can see it work. |
 | Email through Microsoft 365 | Built and tested only against a pretend Microsoft server. Not tried on a real account. |
 | Windows installer, saved-password storage, automatic schedule | Written, **not yet run on a Windows computer**. |
@@ -61,16 +62,25 @@ Open `out/report.html` in your browser (and `out/email.txt` for the plain-text e
 
 Open it with the desktop shortcut or `python -m dssreport settings`. It is a page in your browser that only your own computer can reach. Every setting has a one-line explanation:
 
-- **Restaurant365:** connect, address, user name (Domain\Username), password.
-- **Locations:** "only these locations" (optional), and a Show/Hide tick for each location the program has seen, so a closed restaurant can be switched off.
+- **Licence:** status in plain words, customer, connections used out of allowed, end date, updates date, and a button to load a licence file.
+- **Restaurant365 connections:** one block per connection (name, address, user name (Domain\Username), password, its own location choices). Add as many as your licence allows.
+- **Locations (inside each connection):** "only these locations" (optional), and a Show/Hide tick for each location that connection has sent, so a closed restaurant can be switched off.
 - **What counts as a problem:** a tick box and a number for each rule. They are saved into `rules.toml`, which you can still edit by hand.
 - **Email:** prepare a draft after each scheduled run; who it goes to; your Microsoft app ID; **send automatically** (off by default - otherwise you only get a draft); sign in to Microsoft 365.
 - **Schedule:** run automatically, time of day, days (weekdays by default). If the computer was off at that time, the report runs once when it next starts and is marked **late**.
 - **Summary sentence (optional):** off by default.
 
+### Licence
+
+A licence is a small signed file from Jay Rohrs: customer name, how many R365 connections, an end date, the extras included, and an "updates until" date. The program checks the signature **on your own computer**; nothing is sent anywhere for licensing, there is no account and no server to phone. From 30 days before the end date, a plain reminder ("Licence expires in N days") appears in settings and at the top of each report; after it, "Licence expired on <date> — renew to add connections or get updates." If a licence ends or is missing, **you keep every report you already have** and can still open it; the program stops adding connections (and, with no licence at all, connecting to R365) and shows a clear "Licence: expired / over limit / not found" line. Demo data never needs a licence. Details: [docs/LICENSING.md](docs/LICENSING.md).
+
+### Several R365 instances
+
+One licence can cover several connections. The report groups locations by connection. If one connection cannot be reached, the report says so at the top ("<name>: could not connect: <plain reason>"), those locations are UNKNOWN, and the other connections are still shown.
+
 ### Connecting to R365
 
-R365's address and your login come from R365 (their support enables the OData connector for your database). Enter them in settings and press **Save and test the connection**. The password is kept only in Windows Credential Manager, never in a file. Then the field mapping must be filled in once: run `python -m dssreport r365 discover` to list what your database offers, and put the names in `r365_mapping.toml` (a template is in `r365_mapping.example.toml`). Until then the report says "needs mapping" for every check it cannot do.
+R365's address and your login come from R365 (their support enables the OData connector for your database). Enter them in settings and press **Save and test the connection**. The password is kept only in Windows Credential Manager, never in a file. Then the field mapping must be filled in once for each connection: run `python -m dssreport r365 discover` (add `--instance "<name>"` to pick one) to list what that database offers, and put the names in that connection's mapping file under `%LOCALAPPDATA%\DssReport\mappings\` (the settings screen shows the exact path; a template is in `r365_mapping.example.toml`). Until then the report says "needs mapping" for every check it cannot do.
 
 A restaurant that sends **no rows at all** is not listed, because the program does not guess which restaurants to expect. To be told when one goes quiet, add it under "Only these locations": it then shows as UNKNOWN. The report says this at the bottom.
 
@@ -80,9 +90,19 @@ Your real field mapping, R365 address and user name, Microsoft app ID and email 
 
 "Run Now" (or the schedule) makes the report. The **view page** shows it on screen with two choices: **Create an email draft in Microsoft 365** (or send it, if "send automatically" is ticked - off by default, meant for administrators using their own accounts), or **Open in my mail app** (what a phone would use). Sign-in to Microsoft is on Microsoft's own page; this program never sees or stores your Microsoft password. The report page is attached to the Microsoft 365 draft and the text is in the body. Phone viewing away from the computer is a plan only: [docs/MOBILE_PLAN.md](docs/MOBILE_PLAN.md).
 
+## Updates
+
+Updates are controlled by Jay Rohrs. When an update is released to you, you are sent an update file and you install it in settings (**Updates**). The program checks on your computer that the file is genuinely from Jay Rohrs and that your licence's update period (or "Updates: lifetime") covers it, replaces only the program files, keeps your settings, passwords, licence and reports exactly as they were, and lets you go back to the previous version.
+
+There is also an **optional** online check, **off by default**: if you switch it on and give it the address you were given, pressing "Check for updates now" fetches a small signed list of versions, and you choose whether to download and then whether to install. It sends nothing about you (no licence, no name, no computer details). Nothing downloads or installs by itself. Details: [docs/UPDATES.md](docs/UPDATES.md).
+
+## If R365 changes its API
+
+The program reaches R365 through one interface, so a connector for the new API can replace the current one without changing the checks, the report, the email or the settings. See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Nothing for the new API is built yet.
+
 ## Where your data stays
 
-On your computer. The program makes network calls only to places you set up: your R365 address, Microsoft 365 if you turn email on, and a language model on this same computer if you turn that on. No analytics, no tracking, nothing else. Reports are saved in `%LOCALAPPDATA%\DssReport\reports` (and `out/` for demo runs, which git ignores). The R365 password and Microsoft sign-in live only in the operating system's credential store.
+On your computer. Licensing is checked locally and sends nothing. The program makes network calls only to places you set up (the complete list): your R365 address, Microsoft 365 if you turn email on, a language model on this same computer if you turn that on, and the update list address if you turn the optional update check on and press the button. No analytics, no tracking, nothing else. Reports are saved in `%LOCALAPPDATA%\DssReport\reports` (and `out/` for demo runs, which git ignores). The R365 password and Microsoft sign-in live only in the operating system's credential store.
 
 ## Security
 
@@ -90,4 +110,4 @@ See [SECURITY.md](SECURITY.md). **Never commit real data to this repository.** T
 
 ## For the person maintaining it
 
-Tests: `python -m unittest` (no extra software). Design notes: [docs/DEVELOPER_NOTES.md](docs/DEVELOPER_NOTES.md). Plans, not built: [docs/LOCAL_MODEL_PLAN.md](docs/LOCAL_MODEL_PLAN.md), [docs/MOBILE_PLAN.md](docs/MOBILE_PLAN.md).
+Tests: `python -m unittest` (no extra software). Design notes: [docs/DEVELOPER_NOTES.md](docs/DEVELOPER_NOTES.md). Licence signing tool (kept out of the shipped program): `tools/`. Plans, not built: [docs/LOCAL_MODEL_PLAN.md](docs/LOCAL_MODEL_PLAN.md), [docs/MOBILE_PLAN.md](docs/MOBILE_PLAN.md).

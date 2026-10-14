@@ -68,16 +68,22 @@ class Decisions(unittest.TestCase):
 
 class ScheduledRun(unittest.TestCase):
     def setUp(self):
+        from . import licence_helpers as H
+        self.H = H
         self.home = tempfile.mkdtemp()
         p = mock.patch.dict("os.environ", {"DSSREPORT_HOME": self.home})
         p.start()
         self.addCleanup(p.stop)
+        k = H.trusted_keys()
+        k.__enter__()
+        self.addCleanup(lambda: k.__exit__(None, None, None))
+        H.install(self.home)                 # a valid licence that includes the schedule
 
     def fake_runner(self, calls):
         def run(spec, out, end=None, days=1, rules_path=None, late_note="", email=False):
             calls.append(dict(spec=spec, out=out, end=end, late_note=late_note, email=email))
             rep = mock.Mock(headline="2 of 4 locations need a look.")
-            return mock.Mock(report=rep, email_outcome="A draft is waiting.")
+            return mock.Mock(report=rep, email_outcome="A draft is waiting.", all_failed=False)
         return run
 
     def test_run_records_state_and_log_and_passes_late_label(self):
@@ -104,6 +110,25 @@ class ScheduledRun(unittest.TestCase):
         calls = []
         scheduler.scheduled_run(S, dt(2026, 3, 10, 7, 30), runner=self.fake_runner(calls))
         self.assertEqual(len(calls), 1)  # retried, and the later run is not labelled as a different slot
+
+
+    def test_schedule_needs_the_scheduling_feature(self):
+        self.H.install(self.home, features=["optional_rules"])
+        calls = []
+        out = scheduler.scheduled_run(S, dt(2026, 3, 10, 7, 1), runner=self.fake_runner(calls))
+        self.assertIn("not included in your licence", out)
+        self.assertEqual(calls, [])
+
+    def test_all_connections_failing_is_retried_not_marked_done(self):
+        def all_failed(spec, out, end=None, days=1, rules_path=None, late_note="", email=False):
+            rep = mock.Mock(headline="None of the 2 connections could be reached.")
+            return mock.Mock(report=rep, all_failed=True, email_outcome="")
+        scheduler.scheduled_run(S, dt(2026, 3, 10, 7, 1), runner=all_failed)
+        self.assertNotIn("last_slot", load_state())
+        self.assertIn("last_report_dir", load_state())     # the report that says why can still be opened
+        calls = []
+        scheduler.scheduled_run(S, dt(2026, 3, 10, 7, 30), runner=self.fake_runner(calls))
+        self.assertEqual(len(calls), 1)
 
 
 class TaskXml(unittest.TestCase):

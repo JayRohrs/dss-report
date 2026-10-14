@@ -24,8 +24,9 @@ Pages consulted (by search summary only):
 The real mapping for a real tenant is filled in privately by the owner, in the user-config folder on the
 computer that runs the report:
 
-- Windows: `%LOCALAPPDATA%\DssReport\r365_mapping.toml`
-- (the settings screen shows the exact path and how many items are still empty)
+- Windows: `%LOCALAPPDATA%\DssReport\mappings\<connection>.toml`, one file per R365 connection (a single-connection install from before keeps using `r365_mapping.toml`)
+- (the settings screen shows each connection's exact path and how many items are still empty)
+- Every mapping file starts with `version = 1`. A future connector for R365's new API can require a different version; see `docs/DATA_SOURCES.md`.
 
 That folder is outside this repository. `r365_mapping.toml`, `settings.json` and `state.json` are also in
 `.gitignore` and a test fails if one appears in the repo. The same goes for the R365 address, user name,
