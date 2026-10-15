@@ -1,0 +1,50 @@
+# Never commit real data. Keep real files in these folders (or anywhere outside the repo).
+/data/
+/private/
+/real-data/
+/real_data/
+/local-testing/
+/input/
+/inbox/
+/exports/
+
+# Generated reports (they contain figures)
+/out/
+/output/
+
+# Data files are ignored everywhere except the made-up demo and test data.
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.json
+!/examples/**
+!/tests/fixtures/**
+
+# Secrets and local settings
+.env
+.env.*
+*.key
+*.pem
+rules.local.toml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Private, per-computer files. The real R365 field mapping, settings and run memory belong in the
+# user's own folder (%LOCALAPPDATA%\DssReport), never in this repo. Ignored here as a safety net.
+r365_mapping.toml
+settings.json
+state.json
+task.xml
+run.log
+reports/
+
+# Licence signing keys: the PRIVATE key never goes in this repo (see docs/LICENSING.md).
+*.private.key
+*.pem
+/keys/
+/tools/keys/
+licence.json

@@ -1,0 +1,39 @@
+# Restaurant365 field mapping - one file PER CONNECTION. Copy to your DssReport folder as
+# mappings\<connection-id>.toml (the settings screen shows the exact path) and fill in.
+#
+# WHY THIS FILE EXISTS
+# The R365 documentation we could follow does not clearly say which OData entity holds
+# the daily sales summary figures, or what its fields are called. We do not guess.
+# Everything is therefore EMPTY until someone confirms the names against their own
+# R365 tenant (run:  python -m dssreport r365 discover  to list what the tenant offers).
+# A check whose field is empty is skipped and shown in the report as "needs mapping".
+# See docs/R365_OPEN_QUESTIONS.md.
+
+# Format of this file. A connector says which format(s) it reads; a file in another format is refused
+# with a plain message. Leave this as 1 for the current OData connector.
+version = 1
+
+[source]
+entity = ""                 # the entity set that has one row per location per business day
+location = ""               # property holding the location name
+business_date = ""          # property holding the business date
+date_literal = "date"       # how dates are written in a filter: "date" (2026-03-13) or "datetime" (2026-03-13T00:00:00Z)
+
+[fields]
+sales_total = ""
+cash_over_short = ""        # negative = short, positive = over
+missing_receipts = ""
+payment_exceptions = ""
+approved = ""               # UNVERIFIED in R365. Also fill the two lists below if it is not true/false.
+pos_import_received = ""
+
+[values]
+# If a status property holds words instead of true/false, say which words mean yes and no.
+# Any other value is treated as UNKNOWN, never guessed.
+approved_true = []
+approved_false = []
+pos_import_received_true = []
+pos_import_received_false = []
+
+[payments]
+# payment type name = property holding that amount, e.g.   cash = "SomeCashProperty"
