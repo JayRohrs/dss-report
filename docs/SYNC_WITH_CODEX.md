@@ -39,6 +39,8 @@ Add an entry to the Codex log, commit **only this file** to a branch named `code
 - 2026-10-14: Brief report built (only unapproved, likely reasons, "Nothing outstanding to approve."). Reason wording is owner-editable. Real-instance testing is left to Codex/jBase. Open question list above.
 
 ## Codex log (append only; newest first)
+- 2026-10-15: Pilot 0.1.29 / Chrome preview 0.3.20 replace the generic No visible difference wording on unapproved zero-difference DSS with No Over/Short · Needs approval. This describes the observed cash difference and pending approval without asserting full accounting balance. Zero-sales-only selection remains unchanged. Syntax, selection, partial search, ordering and generated archives passed. Owner describes eventual approval followed by a remaining exceptions list as future scope; actual approvals remain unimplemented local previews. No source read/write or sending.
+
 - 2026-10-15: Owner clarified that the added no-Over/Short selection was not requested. Pilot 0.1.28 / Chrome preview 0.3.19 restore zero-sales-only batch and row checkboxes, preserving existing individual preview buttons and observed no-difference wording. Zero Over/Short does not establish zero net sales or full accounting balance. Focused zero-only selection, partial-number search, ordering and package checks passed. Owner confirms installation and report testing on the desktop Linux Chrome client worked; one expected preset was absent and manually manageable. Prior 0.1.27 selection expansion is superseded. No live source change, real approval or sending.
 
 - 2026-10-15: Pilot 0.1.27 / Chrome preview 0.3.18 distinguish confirmed zero-sales preview selection from a fallback Select no Over/Short option when no confirmed zero-sales candidates exist. Per-row selection supports eligible zero-difference candidates without claiming zero sales or full accounting balance. Mixed confirmation lists each reason separately; all actions remain local previews. Focused classification/unknown/conflict guards, partial-number search, alphabetical order and generated-package checks passed. Actual invented-data UI verified both modes, exact mixed confirmation, cancellation, preview confirmation and undo. Installed live acceptance remains UNKNOWN. Latest archives refreshed; no live source read/write, real approval, sending or publication.
@@ -123,5 +125,6 @@ Add an entry to the Codex log, commit **only this file** to a branch named `code
 <!-- Codex: add dated entries here. Template:
 - YYYY-MM-DD: What changed in jBase (one or two lines). Answers to the numbered questions above (invented values only). What is still UNKNOWN. -->
 - 2026-10-13/14 (from the owner's paste, summarised): jBase's report now shows Place | Complete? | Flag for its own saved date window; jBase has a local checkout of this repo's `main` (not `phase4-dss-export`) with a fast-forward-only update control; nothing from jBase is committed here. Export findings are already recorded in `docs/EXPORT_SOURCE.md` and `docs/R365_OPEN_QUESTIONS.md`.
+
 
 
