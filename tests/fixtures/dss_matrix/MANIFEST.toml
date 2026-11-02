@@ -1,0 +1,193 @@
+# One entry per fixture file: which unknown it probes (Q1-Q9 are defined in README.md), what the file is, what the
+# reader does with it TODAY (checked by tests/test_dss_matrix.py), and what a REAL R365 export must show to settle
+# the unknown. Every file is invented ("Sample ..." places, made-up amounts, no ids). None is a copy of a real export.
+
+
+[[fixture]]
+file = "pair_classic.csv"
+probes = ["Q2"]
+what = "Classic list for one business day (2026-03-13): 5 places, 3 Approved, 2 Unapproved. Half of a same-day pair."
+reader_today = "Reads Hill Bistro and Park Diner as not approved. The brief lists those two."
+settled_by = "A real classic export of the SAME day, downloaded at about the same time as a real beta export. Keep both."
+
+[[fixture]]
+file = "pair_beta_lines_up.csv"
+probes = ["Q2"]
+what = "Beta list for the same day and places as pair_classic.csv, written as if 'In Progress' means 'Unapproved'. A pretend result, not a real one."
+reader_today = "Shows the two 'In Progress' places as 'Could not tell'. With the owner's per-connection word set to 'not approved' the brief matches the classic one exactly."
+settled_by = "Place by place, every classic 'Unapproved' row shows 'In Progress' in the beta file and every 'Approved' row shows 'Approved'. Count rows that match and rows that do not."
+
+[[fixture]]
+file = "pair_beta_does_not_line_up.csv"
+probes = ["Q2", "Q7"]
+what = "Same day and places as pair_classic.csv, but the beta words do not follow the classic ones: one 'Completed' where classic says Unapproved, one 'In Progress' where classic says Approved. A pretend result."
+reader_today = "Never treats a word as a yes or no unless the owner set it. If the owner sets 'In Progress = not approved' the brief then differs from the classic brief (Mill Tavern appears, Hill Bistro does not). That is the risk of setting it before checking."
+settled_by = "Any single place whose classic and beta words disagree with the assumed mapping. Also what 'Completed' means for a day that is not yet approved."
+
+[[fixture]]
+file = "over_short_signs_classic.csv"
+probes = ["Q1"]
+what = "Classic list, one place, six days, all Unapproved: -23.5000, 23.5000, (23.50), 23.50-, 0.0000, -0.0000."
+reader_today = "Reads each number correctly, shows the number 'as R365 gives it', never writes 'over' or 'short', and marks the sign as not known."
+settled_by = "One entry where the till really was short by a known amount (and one really over), and which sign R365's file shows for each. Two known cases settle it."
+
+[[fixture]]
+file = "over_short_signs_beta.csv"
+probes = ["Q1", "Q2"]
+what = "Beta list, same day: -23.5000 and 23.5000 on unfinished days and -23.5000 on an approved day."
+reader_today = "An approved day with a cash difference is not listed in the brief; the two unfinished days are 'Could not tell'. Numbers are read with their signs."
+settled_by = "Same as above, from the beta list, so both layouts are known to use the same sign."
+
+[[fixture]]
+file = "headings_renamed_known.csv"
+probes = ["Q6"]
+what = "Headings reworded but all in the shipped word list: DSS Status, Location Name, Business Date, Total Net Sales, Cash Over/Short. No Location Number or Deposit column."
+reader_today = "Reads every column by name and says which two optional columns are missing."
+settled_by = "The exact heading row of a real beta export. If every heading is in the list nothing needs to change."
+
+[[fixture]]
+file = "headings_renamed_unknown.csv"
+probes = ["Q6"]
+what = "Headings reworded and NOT in the word list: Approval, Site, Day, Sales, Cash Variance Amount."
+reader_today = "Refuses the file in plain words (no Location and Date heading found). Adding the new words to the owner's own heading file makes the same file readable, without a program update."
+settled_by = "A real export whose headings differ. The inspect command prints the headings, with no names or amounts, to copy into the heading list."
+
+[[fixture]]
+file = "headings_new_columns_beta.csv"
+probes = ["Q6", "Q9"]
+what = "Beta list plus six invented extra columns: POS Import Status, Missing Receipts, Payment Exceptions, Balanced, Approved By, Approved On."
+reader_today = "Lists the six as 'not recognised' and uses none of them. The POS, receipt, exception and balance checks stay 'not in the export'."
+settled_by = "Whether any real export ever carries those items. Today the owner's real exports do not."
+
+[[fixture]]
+file = "headings_beta_gains_approval_column.csv"
+probes = ["Q6", "Q2"]
+what = "Beta list that gains a second column called Approval Status next to Status (In Progress / Completed)."
+reader_today = "Uses Approval Status for the approval check and leaves Status unused; no warning that the two columns exist."
+settled_by = "A real beta export with both columns, to see whether Approval Status says Approved/Unapproved on the same rows where Status says In Progress/Completed."
+
+[[fixture]]
+file = "missing_row_classic_with_count.csv"
+probes = ["Q3"]
+what = "Classic list, 4 rows, but the __count column says 5."
+reader_today = "Warns 'Partial list: the file says it holds 5 entries but only 4 were read'."
+settled_by = "A real classic export where a known day is absent. Check whether __count counts the absent row."
+
+[[fixture]]
+file = "missing_row_beta_no_count.csv"
+probes = ["Q3"]
+what = "Beta list with 4 of 5 places for the day and no count anywhere."
+reader_today = "Cannot tell the row is missing and says so. If the person types the total R365's screen shows (5), it warns 'Partial list'."
+settled_by = "A real beta export with a row that is on R365's screen but not in the file, plus the screen's own total, to see which is right."
+
+[[fixture]]
+file = "long_classic_300_complete.csv"
+probes = ["Q5"]
+what = "Classic list, 10 places for 30 days, __count 300. Complete."
+reader_today = "Reads all 300 rows, no warning."
+settled_by = "A real classic export of a list longer than 250 rows, with the screen's total, to see if every row arrives."
+
+[[fixture]]
+file = "long_classic_250_of_400.csv"
+probes = ["Q5"]
+what = "Classic list, newest first, only the first 250 of 400 rows, __count 400. 250 is the row count the owner's live check saw; whether it is a limit is UNKNOWN."
+reader_today = "Warns 'Partial list ... 400 entries but only 250 were read'."
+settled_by = "The row count of a real export from a list known to be longer than 250 rows, and whether the missing rows are the oldest ones."
+
+[[fixture]]
+file = "long_beta_250_no_count.csv"
+probes = ["Q5", "Q3"]
+what = "Beta list, 250 rows, no count. A cut-off list that looks complete."
+reader_today = "Does not warn on its own. Only the typed 'expected total' (for example 400) exposes it."
+settled_by = "A real beta export of a long list, and the total R365's screen shows for the same list."
+
+[[fixture]]
+file = "format_classic_with_bom.csv"
+probes = ["Q8"]
+what = "Classic list that starts with a byte-order mark (the real classic file does not)."
+reader_today = "Reads normally; the mark is stripped and the first heading is found."
+settled_by = "Whether a real classic export ever starts with a byte-order mark."
+
+[[fixture]]
+file = "format_beta_no_bom_lf.csv"
+probes = ["Q8"]
+what = "Beta list without the byte-order mark and with plain line ends (LF)."
+reader_today = "Reads normally; plain line ends and no mark make no difference."
+settled_by = "Whether beta files always start with the byte-order mark and use CRLF line ends."
+
+[[fixture]]
+file = "format_dates_iso.csv"
+probes = ["Q8"]
+what = "Beta list with dates written 2026-03-13."
+reader_today = "Reads the date as 13 March 2026."
+settled_by = "The exact date text in the Date column of each layout."
+
+[[fixture]]
+file = "format_dates_day_first.csv"
+probes = ["Q8"]
+what = "Beta list with dates written 13/03/2026 (day first; the 13 proves it)."
+reader_today = "Reads as 13 March 2026 with no warning."
+settled_by = "Whether a real export ever comes day-first (for example from a non-US account)."
+
+[[fixture]]
+file = "format_dates_ambiguous.csv"
+probes = ["Q8"]
+what = "Beta list with dates written 03/04/2026 (could be 3 April or 4 March)."
+reader_today = "Reads month first (4 March) and warns in plain words to check one day against R365."
+settled_by = "One real export from a non-US account, and a known day to check the order against."
+
+[[fixture]]
+file = "format_dates_words.csv"
+probes = ["Q8"]
+what = "Beta list with dates written 'Mar 13, 2026' and '13 March 2026'."
+reader_today = "Reads both as 13 March 2026."
+settled_by = "Whether any real export writes month names."
+
+[[fixture]]
+file = "format_numbers.csv"
+probes = ["Q8", "Q1"]
+what = "Beta list, one place, seven days, Over/Short written $23.50, (23.50), 23.50-, a true minus sign, 1,234.50, a lone dash and n/a."
+reader_today = "Reads the first five as numbers (the sign kinds agree), shows the dash and n/a as UNKNOWN and counts them. A dash is never guessed to be zero."
+settled_by = "Every spelling of a negative number that real exports use."
+
+[[fixture]]
+file = "format_semicolon_comma_decimal.csv"
+probes = ["Q8"]
+what = "Beta list, semicolon-separated, with a comma as the decimal mark (-23,50 and 3000,00), as some European Excel settings write it."
+reader_today = "KNOWN GAP: the file is read, but -23,50 becomes -2350 and 3000,00 becomes 300000 with no warning, because a comma is always treated as a thousands mark. The test for the right behaviour is marked as an expected failure."
+settled_by = "Whether a real export is ever written this way. R365's US exports show a dot as the decimal mark; this has not been seen."
+
+[[fixture]]
+file = "variant_classic.tsv"
+probes = ["Q4"]
+what = "The pair_classic table as a tab-separated file."
+reader_today = "Reads exactly like the CSV."
+settled_by = "Whether R365 can download a .tsv file at all."
+
+[[fixture]]
+file = "variant_beta.tsv"
+probes = ["Q4"]
+what = "The beta table as a tab-separated file, with the byte-order mark."
+reader_today = "Reads exactly like the CSV."
+settled_by = "Whether R365 can download a .tsv file at all."
+
+[[fixture]]
+file = "variant_classic_typed_cells.xlsx"
+probes = ["Q4"]
+what = "The classic table as an Excel file where dates are real date cells and amounts are real numbers."
+reader_today = "Reads the same places, dates and amounts as the CSV."
+settled_by = "Whether R365 can download a .xlsx file, and whether its cells are typed or text."
+
+[[fixture]]
+file = "variant_beta_text_cells.xlsx"
+probes = ["Q4"]
+what = "The beta table as an Excel file where every cell is text."
+reader_today = "Reads the same as the CSV."
+settled_by = "Whether R365 can download a .xlsx file, and whether its cells are typed or text."
+
+[[fixture]]
+file = "variant_beta_title_and_footer.xlsx"
+probes = ["Q4", "Q3", "Q6"]
+what = "Beta table in Excel with three title lines above the headings and a 'Total Records: 5' line below."
+reader_today = "Finds the headings on line 4, ignores the footer as data and uses it as the stated total."
+settled_by = "Whether a real export has title lines or a footer, and what the footer says."
