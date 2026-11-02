@@ -53,6 +53,10 @@ def _parser():
     ex.add_argument("--expected-total", type=int, help="the total R365 shows on screen (\"... of N items\"), to notice a partial file")
     dx = sub.add_parser("demo-export", help="write made-up sample DSS list files (CSV, TSV, Excel) to try the export source")
     dx.add_argument("--out", required=True, help="folder to write into")
+    dm = sub.add_parser("demo", help="build an invented 12-place group with realistic mess, run the real report on it and open it")
+    dm.add_argument("--story", action="store_true", help="print a short plain-words story of what each mess case shows")
+    dm.add_argument("--out", help="folder to write the demo into (default: a new temp folder)")
+    dm.add_argument("--no-open", action="store_true", help="do not open the result in the browser")
     demo = sub.add_parser("demo-data", help="write the made-up demo data as CSV and JSON files")
     demo.add_argument("--out", required=True, help="folder to write into")
     return p
@@ -156,6 +160,25 @@ def _export(args) -> int:
     return 0
 
 
+def _demo(args) -> int:
+    from .demo_group import run_demo, story_text
+    if args.story:
+        print(story_text(), end="")
+        return 0
+    res = run_demo(args.out)
+    print(f"Built an invented group (12 places, 2 R365 connections) for {res.last_day.isoformat()}. Nothing real, nothing sent.")
+    print(f"Brief:        {res.html_path}")
+    print(f"Email text:   {res.text_path}")
+    print(f"If the file were old: {res.old_file_path}")
+    print(f"The two made-up export files are in {res.export_paths['east'].parent}")
+    print("To print or save as a PDF, open the brief and use your browser's Print.")
+    print("Plain-words story of each case: python -m dssreport demo --story")
+    if not args.no_open:
+        import webbrowser
+        webbrowser.open(res.html_path.as_uri())
+    return 0
+
+
 def _forget() -> int:
     from .credstore import default_store
     from .graph import SESSION_KEY
@@ -192,6 +215,8 @@ def _r365(args) -> int:
 def main(argv=None) -> int:
     args = _parser().parse_args(argv)
     try:
+        if args.command == "demo":
+            return _demo(args)
         if args.command == "demo-data":
             for path in write_demo_files(args.out):
                 print(f"Wrote {path}")

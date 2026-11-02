@@ -60,6 +60,16 @@ Open `out/report.html` in your browser (and `out/email.txt` for the plain-text e
 
 `python -m dssreport run --input demo --out out/ --days 14`
 
+### Show it to a restaurant-group owner (the 12-place demo)
+
+`python -m dssreport demo` builds an invented 12-place group on two R365 connections (one classic list, one newer "beta" list), makes the downloaded files messy the way real ones get (a renamed heading, an "In Progress" status, a missing row, a conflicting duplicate row, a place with no data, and an old file), runs the real reader and the real brief on them in a temp folder, and opens the result. It writes `brief.html` (one self-contained page: phone first, desktop second, and print-friendly: use the browser's Print, then Save as PDF), `brief-email.txt`, and `brief-old-file.html` (the same group if one file were from yesterday). Nothing is sent anywhere and nothing real is used.
+
+`python -m dssreport demo --story` prints a short plain-words story of what each mess case shows and how the report refuses to guess ("Could not tell"). `--out FOLDER` chooses where the files go; `--no-open` does not open the browser.
+
+![The brief on a phone](docs/screenshots/demo-brief-375px.png)
+
+[On a desktop](docs/screenshots/demo-brief-1500px.png), [if one file were old](docs/screenshots/demo-brief-old-file-375px.png).
+
 ## The settings screen
 
 Open it with the desktop shortcut or `python -m dssreport settings`. It is a page in your browser that only your own computer can reach. Every setting has a one-line explanation:
