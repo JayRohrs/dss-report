@@ -18,3 +18,13 @@ missing_receipts = "{value}"
 payment_exceptions = "{value}"
 payments_total = "Payments do not match sales"
 sales_blank = "Sales total is blank"
+cash_unchecked = "Cash difference not checked: this file has no Over/Short column"
+
+# Why a place "could not be told". The report never guesses: these places are not counted as approved.
+# {value} is the word the file used for its status.
+[untold]
+no_data = "No data for this day"
+conflict = "The file has two rows for this day that disagree"
+stale = "The file is not from today, so approval cannot be told"
+unclear_status = "Status is '{value}', which is not treated as approved or not"
+no_column = "No approval column in this file"

@@ -120,7 +120,8 @@ class Brief(Env):
         res = self.one()
         brief = res.html_path.read_text(encoding="utf-8")
         full = (res.html_path.parent / "report-full.html").read_text(encoding="utf-8")
-        self.assertLess(len(brief), len(full))
+        shown = lambda page: re.sub(r"<style>.*?</style>", "", page, flags=re.S)     # the page's own styling is not "length"
+        self.assertLess(len(shown(brief)), len(shown(full)))
         self.assertNotIn("How this was decided", brief)
         self.assertTrue((res.html_path.parent / "email-full.txt").exists())
         res = run_report("demo", self.home / "d2", style="full")
