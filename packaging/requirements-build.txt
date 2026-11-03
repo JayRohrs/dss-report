@@ -1,0 +1,2 @@
+# Build-time only. Nothing here is shipped as source; PyInstaller bundles Python itself into the exe.
+pyinstaller==6.11.1
