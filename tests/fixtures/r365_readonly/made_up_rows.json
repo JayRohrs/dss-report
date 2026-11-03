@@ -1,0 +1,9 @@
+{"_note": "Made-up fixture. Names are invented for tests and are NOT Restaurant365's.",
+ "value": [
+  {"mockLocation": "Sample Pier Grill", "mockDate": "2026-03-13", "mockSales": 5100.5, "mockCashOS": -3.25,
+   "mockMissingReceipts": 0, "mockPayExceptions": 1, "mockStatus": "Done", "mockPosIn": true,
+   "mockPay_cash": 900.0, "mockPay_card": 4200.5},
+  {"mockLocation": "Sample Hill Bistro", "mockDate": "2026-03-13", "mockSales": 7000.0,
+   "mockStatus": "Open"},
+  {"mockLocation": "Sample Dock Cafe", "mockDate": "2026-03-13", "mockSales": null, "mockStatus": "Mystery"}
+ ]}
