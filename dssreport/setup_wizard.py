@@ -378,7 +378,7 @@ class Wizard:
         s = load_settings()
         f = f or {}
         can_auto = lic.current_status().has(lic.F_SCHEDULE)
-        mode = f.get("mode") or ("auto" if (s.schedule_enabled or can_auto) else "manual")
+        mode = f.get("mode") or ("auto" if s.schedule_enabled else "manual")   # nothing runs by itself unless asked
         time = f.get("schedule_time", s.schedule_time)
         days = [int(k[2:]) for k in f if k.startswith("wd") and k[2:].isdigit()] if f else s.schedule_weekdays
         email_on = ("email_enabled" in f) if f else s.email_enabled

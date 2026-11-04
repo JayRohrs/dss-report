@@ -261,6 +261,8 @@ class StepThree(WizardBase):
 
     def test_default_answers_run_nothing_and_email_is_off(self):
         _, html = self.wiz_get("schedule", inst=self.inst().id)
+        self.assertRegex(html, r'name="mode" value="manual" checked')
+        self.assertNotRegex(html, r'name="mode" value="auto" checked')
         self.assertNotRegex(html, r'name="email_enabled"[^>]*checked')
         _, html = self.sched()
         s = load_settings()
