@@ -38,7 +38,7 @@ class PackagingFiles(unittest.TestCase):
     def test_build_uses_pinned_open_tools(self):
         self.assertRegex((PKG / "requirements-build.txt").read_text(), r"(?m)^pyinstaller==\d+\.\d+\.\d+$")
         build = (PKG / "build_windows.cmd").read_text()
-        self.assertIn("pyinstaller", build)
+        self.assertIn("python -m PyInstaller", build)
         self.assertIn("iscc", build)
 
     def test_spec_bundles_the_data_the_program_reads(self):

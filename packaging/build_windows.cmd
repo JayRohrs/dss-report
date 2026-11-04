@@ -6,7 +6,7 @@ cd /d "%~dp0.."
 python -m venv .venv-build || goto :fail
 call .venv-build\Scripts\activate.bat || goto :fail
 python -m pip install -r packaging\requirements-build.txt || goto :fail
-python -m pyinstaller --noconfirm --clean packaging\dss-report.spec || goto :fail
+python -m PyInstaller --noconfirm --clean packaging\dss-report.spec || goto :fail
 for /f %%V in ('python -c "import dssreport;print(dssreport.__version__)"') do set "VER=%%V"
 where iscc >nul 2>&1 && (iscc /DAppVersion=%VER% packaging\installer.iss || goto :fail) || echo  Inno Setup not found: skipping the installer. The portable program is dist\dss-report.exe
 echo.

@@ -25,7 +25,7 @@ It does exactly this (you can run the lines yourself):
 python -m venv .venv-build
 .venv-build\Scripts\activate.bat
 python -m pip install -r packaging\requirements-build.txt
-python -m pyinstaller --noconfirm --clean packaging\dss-report.spec
+python -m PyInstaller --noconfirm --clean packaging\dss-report.spec
 iscc /DAppVersion=0.3.0 packaging\installer.iss
 ```
 
