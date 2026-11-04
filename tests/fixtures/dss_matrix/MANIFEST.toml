@@ -154,7 +154,7 @@ settled_by = "Every spelling of a negative number that real exports use."
 file = "format_semicolon_comma_decimal.csv"
 probes = ["Q8"]
 what = "Beta list, semicolon-separated, with a comma as the decimal mark (-23,50 and 3000,00), as some European Excel settings write it."
-reader_today = "KNOWN GAP: the file is read, but -23,50 becomes -2350 and 3000,00 becomes 300000 with no warning, because a comma is always treated as a thousands mark. The test for the right behaviour is marked as an expected failure."
+reader_today = "Without the comma fix, -23,50 becomes -2350 and 3000,00 becomes 300000 with no warning (the test is skipped and says so). With the fix, both amounts are UNKNOWN and the report warns."
 settled_by = "Whether a real export is ever written this way. R365's US exports show a dot as the decimal mark; this has not been seen."
 
 [[fixture]]

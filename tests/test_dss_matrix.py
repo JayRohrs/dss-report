@@ -10,6 +10,7 @@ import tempfile
 import tomllib
 import unittest
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from dssreport import dss_export as E
@@ -264,12 +265,12 @@ class Q8Formats(unittest.TestCase):
         self.assertEqual({r.business_date for r in p.records}, {date(2026, 3, 4)})
         self.assertTrue(any("could be month/day or day/month" in w for w in p.warnings))
 
-    @unittest.expectedFailure
-    def test_KNOWN_GAP_a_comma_decimal_mark_is_not_read_as_a_thousands_mark(self):
-        """Today -23,50 is read as -2350 with no warning. When the reader is fixed this passes, the
-        expectedFailure marker will make the run say so, and the marker should then be removed."""
+    @unittest.skipIf(E.parse_money("-23,50")[0] == Decimal("-2350"),
+                     "KNOWN GAP: this reader still reads -23,50 as -2350 (fixed in the money-comma PR)")
+    def test_a_comma_decimal_mark_is_not_read_as_a_thousands_mark(self):
         r = read("format_semicolon_comma_decimal.csv").records[0]
-        self.assertIn(r.cash_over_short, (None, E.parse_money("-23.50")[0]))
+        self.assertIsNone(r.cash_over_short)
+        self.assertIsNone(r.sales_total)
 
 
 class Q9NotInTheExport(I.Env):
