@@ -27,7 +27,7 @@ class SalesPack(unittest.TestCase):
     def test_no_money_figure_other_than_the_invented_cash_difference(self):
         for f in FILES:
             for m in re.finditer(r"\$\s?\d[\d,.]*", text(f)):
-                self.assertEqual(m.group(0), "$23.50", f"{f}: {m.group(0)}")
+                self.assertIn(m.group(0), ("$23.50", "$5.00"), f"{f}: {m.group(0)}")   # invented example; the existing report limit
             self.assertNotRegex(text(f), r"\d+\s?%", f)                    # no percentage claims
             self.assertNotRegex(text(f).lower(), r"\b\d+\s+(hours?|minutes?) (a|per|each) (day|week)", f)
 
