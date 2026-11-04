@@ -89,7 +89,7 @@ def scheduled_run(settings: Settings, now: Optional[datetime] = None, input_spec
         return d.reason
     day = report_day(now)
     try:
-        result = run(input_spec, reports_dir() / day.isoformat(), end=day, days=1,
+        result = run(input_spec, reports_dir() / day.isoformat(), end=day, days=runner_mod.BRIEF_DAYS,
                      rules_path=rules_path, late_note=d.late_note, email=settings.email_enabled)
     except DssError as exc:
         state["last_error"] = f"{now.isoformat(timespec='minutes')} {exc}"

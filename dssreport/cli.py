@@ -5,7 +5,7 @@ from datetime import date
 from . import __version__
 from .adapters.demo import write_demo_files
 from .errors import DssError
-from .runner import run_report
+from .runner import BRIEF_DAYS, run_report
 
 
 def _parse_date(text):
@@ -78,7 +78,7 @@ def _run_now() -> int:
     from .state import load_state, save_state
     day = date.today() - timedelta(days=1)
     # No email is created here: the person looks at the report first, then chooses (see the page).
-    result = run_report("r365", reports_dir() / day.isoformat(), end=day, email=False)
+    result = run_report("r365", reports_dir() / day.isoformat(), end=day, days=BRIEF_DAYS, email=False)
     for note in result.notes:
         print(note, file=sys.stderr)
     print(result.report.headline)

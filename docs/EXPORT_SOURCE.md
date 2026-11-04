@@ -27,6 +27,7 @@ The report only shows what is **still unapproved**, so it can be read in seconds
 - **Could not tell:** places whose status cannot be established (no row, a blank or unclear status such as "In Progress", a file older than today, conflicting rows, or a file with no approval column) are listed under that heading. They are never counted as approved and never hidden.
 - **Reasons are likely, not proven.** The export cannot say why a day is unfinished, so the report never states a cause, and nothing here approves anything.
 - **Wording is the owner's to change.** The phrases live in `dssreport/data/reason_terms.toml`. Put a `reason_terms.toml` in your DssReport folder to change any of them without waiting for an update (a broken file is ignored, not fatal).
+- **Window:** screen checks, Run now and the schedule look back over the last 7 business days (ending yesterday; `BRIEF_DAYS` in `dssreport/runner.py`). Each place is one row naming its unapproved days ("Unapproved Oct 12, Oct 13"), and only those days' reasons are shown. A day off inside the week is not "could not tell"; a place with no row anywhere in the window is.
 - The longer report is still written as `report-full.html` / `email-full.txt`; `--full` makes it the main report.
 - Which places appear is your **"Only these locations"** list on each connection (and the hide list). There is no check for places that are missing from the file.
 

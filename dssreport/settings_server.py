@@ -310,7 +310,7 @@ class SettingsApp:
         """Keep a copy of the chosen DSS export file for one connection and check it. Read-only for the file
         the person chose, nothing leaves this computer. Returns (messages, report folder name)."""
         from datetime import timedelta
-        from .runner import run_report
+        from .runner import BRIEF_DAYS, run_report
         s = load_settings()
         inst = s.instance(instance_id)
         if inst is None or inst.source_kind != dss_export_source.KIND:
@@ -329,7 +329,7 @@ class SettingsApp:
         day = date.today() - timedelta(days=1)
         folder = f"{day.isoformat()}-{inst.id}-export"
         out = paths.reports_dir() / folder
-        result = run_report("r365", out, end=day, only_instance=inst.id)
+        result = run_report("r365", out, end=day, days=BRIEF_DAYS, only_instance=inst.id)
         st = load_state()
         st["last_report_dir"] = str(out)
         save_state(st)

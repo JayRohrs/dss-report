@@ -52,7 +52,10 @@ class Row:
     place: str
     state: str                  # APPROVED / UNAPPROVED_STATE / UNTOLD
     reasons: List[str]          # likely reasons (unapproved) or why it could not be told
-    day: str = ""
+    days: List = None           # the business days that are unapproved (only used when the window is several days)
+
+    def __post_init__(self):
+        self.days = list(self.days or [])
 
     @property
     def ready(self) -> bool:
@@ -98,25 +101,36 @@ def rows_for(report: Report, terms: Dict = None) -> List[Row]:
     return rows
 
 
+def _day(d) -> str:
+    return f"{d:%b} {d.day}"
+
+
 def _row(res: LocationResult, report: Report, approval_checked: bool, terms: Dict) -> Row:
+    """One place over the whole window. Reasons are kept only for days that are actually unapproved, so a cash
+    difference on an approved day never shows up. Days that could not be told are named, never counted as approved."""
     multi = report.multi_day
+    bad_days = sorted({f.business_date for f in res.findings if f.rule == UNAPPROVED and f.kind == ISSUE})
     reasons: List[str] = []
     untold: List[str] = []
-    unapproved = False
+    untold_days = set()
+    nodata_days = {f.business_date for f in res.findings if f.rule == NO_DATA}
+    quiet_gaps = multi and len(nodata_days) < len(report.dates)     # a day off in a week is not "could not tell"
     for f in sorted(res.findings, key=lambda f: (f.business_date, f.kind != ISSUE, f.rule)):
-        tag = f"{f.business_date.isoformat()}: " if multi else ""
+        tag = f"{_day(f.business_date)}: " if multi else ""
         if f.rule == UNAPPROVED and f.kind == ISSUE:
-            unapproved = True
-            if multi:
-                reasons.append(f"{tag}not approved")
+            continue
+        if f.rule == NO_DATA and quiet_gaps:
             continue
         if f.rule in (UNAPPROVED, NO_DATA, CONFLICT):
             untold.append(tag + _short(f.text))
-        elif f.kind == ISSUE:
+            untold_days.add(f.business_date)
+        elif f.kind == ISSUE and (not bad_days or f.business_date in bad_days):
             reasons.append(tag + _reason(f.rule, f.text, terms))
         # a blank value elsewhere ("cash over/short is blank") is not a reason; it is left out of the brief
-    if unapproved:
-        return Row(res.name, UNAPPROVED_STATE, reasons)
+    if bad_days:
+        if multi and untold_days - set(bad_days):
+            reasons.append("Could not tell for " + ", ".join(_day(d) for d in sorted(untold_days - set(bad_days))))
+        return Row(res.name, UNAPPROVED_STATE, reasons, bad_days if multi else [])
     if untold or not approval_checked:
         return Row(res.name, UNTOLD, untold or ["No approval column in this file"])
     return Row(res.name, APPROVED, [])
@@ -133,6 +147,9 @@ def counts(rows: List[Row]) -> Tuple[str, bool]:
     if bad:
         ready = sum(1 for r in bad if r.ready)
         parts.append(f"{len(bad)} unapproved ({ready} ready to approve, {len(bad) - ready} with something flagged).")
+        days = sum(len(r.days) for r in bad)
+        if days:
+            parts.append(f"{days} unapproved place-days.")
     else:
         parts.append("No place shows as unapproved.")
     if untold:
@@ -152,6 +169,10 @@ def _line(r: Row, terms: Dict) -> str:
     return "; ".join(r.reasons) if r.reasons else terms["ready"]
 
 
+def _days_html(r: Row) -> str:
+    return f'<br><span class="note">{escape(", ".join(_day(d) for d in r.days))}</span>' if r.days else ""
+
+
 def _table(rows: List[Row], terms: Dict, e=escape) -> List[str]:
     bad = [r for r in rows if r.state == UNAPPROVED_STATE]
     untold = [r for r in rows if r.state == UNTOLD]
@@ -163,7 +184,7 @@ def _table(rows: List[Row], terms: Dict, e=escape) -> List[str]:
             items = "<ul>" + "".join(f"<li>{e(t)}</li>" for t in r.reasons) + "</ul>" if r.reasons else \
                 f'<span class="badge ok">{e(terms["ready"])}</span>'
             out.append(f'<tr><td class="loc" data-label="Place">{e(r.place)}</td>'
-                       f'<td data-label="Status"><span class="badge {cls if not r.ready else "unknown"}">Unapproved</span></td>'
+                       f'<td data-label="Status"><span class="badge {cls if not r.ready else "unknown"}">Unapproved</span>{_days_html(r)}</td>'
                        f'<td data-label="Likely reason">{items}</td></tr>')
         out.append('</tbody></table>')
     if untold:
@@ -223,7 +244,7 @@ def _text_block(rows: List[Row], terms: Dict) -> List[str]:
     for r in bad:
         first = f"* {r.place.ljust(width)}  "
         pad = " " * len(first)
-        parts = r.reasons or [terms["ready"]]
+        parts = ([("Unapproved: " + ", ".join(_day(d) for d in r.days))] if r.days else []) + (r.reasons or [terms["ready"]])
         lines.append(textwrap.fill(parts[0], 100, initial_indent=first, subsequent_indent=pad))
         lines += [textwrap.fill(t, 100, initial_indent=pad, subsequent_indent=pad) for t in parts[1:]]
     if untold:

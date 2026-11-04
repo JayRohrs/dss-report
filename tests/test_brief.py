@@ -129,3 +129,50 @@ class Brief(Env):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BriefWindow(Env):
+    """The brief over several days: one row per place, naming the days that are still unapproved."""
+
+    def many(self, rows, days=7):
+        a = inst()
+        self.connect(a)
+        yday = TODAY - timedelta(days=1)
+        lines = ["ApprovalStatus,Location,Date,Over/Short"]
+        for loc, offset, status, over in rows:
+            lines.append(f"{status},{loc},{yday - timedelta(days=offset):%m/%d/%Y},{over}")
+        self.give(a, data=("\r\n".join(lines) + "\r\n").encode())
+        return run_report("r365", self.home / f"w{len(list(self.home.glob('w*')))}", days=days, style="brief")
+
+    def test_one_row_per_place_with_its_unapproved_days_and_only_their_reasons(self):
+        res = self.many([("Sample Pier Grill", 0, "Unapproved", "0.00"), ("Sample Pier Grill", 1, "Unapproved", "-30.00"),
+                         ("Sample Pier Grill", 2, "Approved", "99.00"), ("Sample Hill Bistro", 0, "Approved", "0.00")])
+        text = res.text_path.read_text(encoding="utf-8")
+        rows = [r for r in rows_for(res.report) if r.state == UNAPPROVED_STATE]
+        self.assertEqual([r.place for r in rows], ["Sample Pier Grill"])
+        self.assertEqual(len(rows[0].days), 2)
+        self.assertEqual(text.count("Sample Pier Grill"), 1)                 # once, not once per day
+        self.assertIn("Unapproved: ", text)
+        self.assertIn("Needs to balance: Over/Short -$30.00", text)
+        self.assertNotIn("99.00", text)                                       # the approved day's difference is not shown
+        self.assertNotIn("Sample Hill Bistro", text)
+        self.assertIn("2 unapproved place-days.", text)
+
+    def test_a_day_off_in_the_week_is_not_could_not_tell_but_a_silent_week_is(self):
+        res = self.many([("Sample Pier Grill", 0, "Approved", "0.00"), ("Sample Pier Grill", 3, "Approved", "0.00"),
+                         ("Sample Hill Bistro", 0, "Approved", "0.00")])
+        self.assertEqual({r.state for r in rows_for(res.report)}, {APPROVED})
+        self.assertIn("Nothing outstanding to approve.", res.text_path.read_text(encoding="utf-8"))
+        res = self.many([("Sample Pier Grill", 20, "Approved", "0.00"), ("Sample Hill Bistro", 0, "Approved", "0.00")])
+        rows = {r.place: r for r in rows_for(res.report)}
+        self.assertEqual(rows["Sample Pier Grill"].state, UNTOLD)             # nothing at all in the window
+
+    def test_an_unapproved_day_next_to_a_day_that_could_not_be_told_names_both(self):
+        res = self.many([("Sample Pier Grill", 0, "Unapproved", "0.00"), ("Sample Pier Grill", 1, "In Progress", "0.00")])
+        row = [r for r in rows_for(res.report) if r.state == UNAPPROVED_STATE][0]
+        self.assertTrue(any(t.startswith("Could not tell for ") for t in row.reasons))
+
+    def test_the_html_shows_the_days_under_the_badge(self):
+        res = self.many([("Sample Pier Grill", 0, "Unapproved", "0.00"), ("Sample Pier Grill", 2, "Unapproved", "0.00")])
+        html = flat(res.html_path.read_text(encoding="utf-8"))
+        self.assertRegex(html, r"Unapproved [A-Z][a-z]{2} \d+, [A-Z][a-z]{2} \d+")

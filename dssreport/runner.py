@@ -50,6 +50,11 @@ def _apply_licence_to_rules(cfg: Config, status: lic.LicenceStatus) -> None:
         cfg.not_licensed.add(PAYMENTS_TOTAL)
 
 
+#: How many business days the live/export report looks back over (ending yesterday). One row per place; each
+#: place lists the days that are still unapproved.
+BRIEF_DAYS = 7
+
+
 def run_report(input_spec: str, out_dir, end: Optional[date] = None, days: int = 1,
                rules_path=None, ai: bool = False, late_note: str = "",
                email: bool = False, adapter=None, only_instance: Optional[str] = None,
