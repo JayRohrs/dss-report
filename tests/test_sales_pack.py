@@ -67,7 +67,8 @@ class SalesPack(unittest.TestCase):
 
     def test_nothing_is_called_proven_that_is_not(self):
         everything = " ".join(text(f) for f in FILES).lower()
-        self.assertIn("not yet confirmed which sign", everything)
+        self.assertIn("what its sign means is not yet confirmed", everything)
+        self.assertNotRegex(everything, r"(negative|minus)[^.]{0,40}(means|is|=)\s+(short|over)")
         self.assertNotIn("100% accurate", everything)
         self.assertNotIn("auto-approv", everything.replace("automatic approval does not exist", ""))
 

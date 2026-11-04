@@ -28,7 +28,7 @@ The tool reads columns by name, not position, so a reordered file still works, a
 Price: **UNKNOWN**. Savings and return on investment: **UNKNOWN**. No figure has been measured.
 
 **Is it tested on real data?**
-Not yet. It has been tested on invented files that follow the two layouts the owner has seen. A first check on a real download is still to be done, and some questions stay open until then (for example which sign R365 uses for a shortage).
+Not yet. It has been tested on invented files that follow the two layouts the owner has seen. A first check on a real download is still to be done, and some questions stay open until then (for example what the sign of the Over/Short number means in R365).
 
 **Is it made or approved by Restaurant365?**
 No. It is an independent tool for Restaurant365 users.

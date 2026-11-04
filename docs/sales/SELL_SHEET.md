@@ -34,7 +34,7 @@ Time saved: **UNKNOWN** (not measured; no figure is claimed).
 - It does not show POS import status, missing receipts, payment exceptions, whether R365 thinks the books balance, or who approved a day. The export does not carry them.
 - It has been tested only on **invented** files. A first check against a real export is still to be done.
 - R365's newer list says "In Progress" where the older one says "Unapproved". Until checked on a real day, it is shown as "Could not tell".
-- It is not yet confirmed which sign R365 uses for a shortage, so the number is shown exactly as R365 gives it.
+- What the sign of the Over/Short number means in R365 is not yet confirmed, so it is shown exactly as given and flagged when the amount is above $5.00 either way.
 - The Windows installer, schedule and email draft are written but not yet run on a real Windows computer or Microsoft account.
 
 ## Price, savings, results

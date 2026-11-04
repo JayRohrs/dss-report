@@ -52,7 +52,7 @@ Then open `out/report.html`.
 | You see | It means |
 |---|---|
 | **Ready to approve** | The day is not approved and the file flags nothing else. A person still approves it in R365. |
-| **Needs to balance: Over/Short -$23.50** | The day is not approved and the file shows a cash difference. The number is exactly as R365 gives it. Which sign means short is not yet confirmed. |
+| **Needs to balance: Over/Short -$23.50** | The day is not approved and the file shows a cash difference. The number is exactly as R365 gives it, flagged when the amount is above $5.00 either way. What its sign means is not yet confirmed. |
 | **Could not tell** | The status is blank, unclear, contradictory, missing for that day, or the file is old. The reason is written beside it. It is never counted as approved. |
 | **Partial list** | The file says it holds more entries than were read. Some days may be missing. |
 | **Nothing outstanding to approve.** | Everything in the file is approved. |

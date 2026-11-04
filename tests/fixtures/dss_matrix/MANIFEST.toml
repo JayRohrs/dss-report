@@ -28,8 +28,8 @@ settled_by = "Any single place whose classic and beta words disagree with the as
 file = "over_short_signs_classic.csv"
 probes = ["Q1"]
 what = "Classic list, one place, six days, all Unapproved: -23.5000, 23.5000, (23.50), 23.50-, 0.0000, -0.0000."
-reader_today = "Reads each number correctly, shows the number 'as R365 gives it', never writes 'over' or 'short', and marks the sign as not known."
-settled_by = "One entry where the till really was short by a known amount (and one really over), and which sign R365's file shows for each. Two known cases settle it."
+reader_today = "Reads each number correctly, shows the number 'as R365 gives it', never states a direction, and marks the sign as not known."
+settled_by = "One entry whose real cash difference is known, in each direction, and which sign R365's file shows for each. Two known cases settle it."
 
 [[fixture]]
 file = "over_short_signs_beta.csv"

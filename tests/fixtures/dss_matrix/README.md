@@ -13,7 +13,7 @@ Each file has an entry in [`MANIFEST.toml`](MANIFEST.toml) (the plain-words note
 
 | Id | Unknown (from `docs/R365_OPEN_QUESTIONS.md`) | Fixtures |
 |---|---|---|
-| Q1 | Which sign is a shortage? (Over/Short sign) | `over_short_signs_classic.csv`, `over_short_signs_beta.csv`, `format_numbers.csv` |
+| Q1 | What does the sign of Over/Short mean? | `over_short_signs_classic.csv`, `over_short_signs_beta.csv`, `format_numbers.csv` |
 | Q2 | Does beta "In Progress" mean classic "Unapproved"? | `pair_classic.csv`, `pair_beta_lines_up.csv`, `pair_beta_does_not_line_up.csv`, `over_short_signs_beta.csv`, `headings_beta_gains_approval_column.csv` |
 | Q3 | Why was one beta row missing? | `missing_row_classic_with_count.csv`, `missing_row_beta_no_count.csv`, `long_beta_250_no_count.csv`, `variant_beta_title_and_footer.xlsx` |
 | Q4 | Can R365 download `.xlsx` or `.tsv` at all? | `variant_*.tsv`, `variant_*.xlsx` |
