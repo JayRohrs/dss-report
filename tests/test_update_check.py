@@ -307,7 +307,7 @@ class Downloading(Env):
 
 
 class NetworkSurface(unittest.TestCase):
-    ALLOWED = {"r365.py", "graph.py", "summary.py", "update_check.py"}
+    ALLOWED = {"r365.py", "graph.py", "summary.py", "update_check.py", "draftmail.py"}  # draftmail: draft-only, see tests/test_desktop_draft_only.py
 
     def test_only_the_documented_modules_can_make_network_calls(self):
         pattern = re.compile(r"^\s*(import urllib\.request|from urllib import request|import socket|import http\.client|"

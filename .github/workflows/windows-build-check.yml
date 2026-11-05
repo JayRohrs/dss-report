@@ -1,0 +1,49 @@
+# Proves the Windows packaging works on a real Windows machine: tests, one-file exe, installer,
+# and a real Task Scheduler create/query/delete. Uploads nothing public and uses no secrets.
+name: windows-build-check
+on:
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "dssreport/desktop/**"
+      - ".github/workflows/windows-build-check.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tests
+        run: python -m unittest discover
+      - name: Build exe and installer
+        shell: cmd
+        run: packaging\build_windows.cmd
+      - name: Smoke test the one-file exe (made-up demo data)
+        shell: cmd
+        run: |
+          set DSSREPORT_HOME=%RUNNER_TEMP%\dss-smoke
+          dist\dss-report.exe status || exit /b 1
+          dist\dss-report.exe run-now || exit /b 1
+          dist\dss-report.exe log || exit /b 1
+      - name: Schedule on, query, off (real Task Scheduler)
+        shell: cmd
+        run: |
+          set DSSREPORT_HOME=%RUNNER_TEMP%\dss-smoke
+          dist\dss-report.exe schedule on || exit /b 1
+          schtasks /Query /TN "DSS Report Daily" || exit /b 1
+          dist\dss-report.exe status
+          dist\dss-report.exe schedule off || exit /b 1
+          schtasks /Query /TN "DSS Report Daily" && exit /b 1 || exit /b 0
+      - name: Silent install and uninstall
+        shell: cmd
+        run: |
+          for %%F in (dist\installer\DSS-Report-Setup-*.exe) do set "SETUP=%%F"
+          "%SETUP%" /VERYSILENT /SUPPRESSMSGBOXES /DIR="%RUNNER_TEMP%\dss-app" || exit /b 1
+          if not exist "%RUNNER_TEMP%\dss-app\dss-report.exe" exit /b 1
+          schtasks /Query /TN "DSS Report Daily" && exit /b 1
+          "%RUNNER_TEMP%\dss-app\unins000.exe" /VERYSILENT || exit /b 1
