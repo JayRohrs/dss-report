@@ -114,3 +114,30 @@ def inspect(data: bytes, filename: str, today: Optional[date] = None, user_alias
 
 def norm_is_status(heading: str) -> bool:
     return "status" in E.norm(heading)
+
+
+# Headings that only one of the two known R365 lists has (names compared the same way as everywhere else).
+_CLASSIC_MARKS = {"approvalstatus", "dailysalessummaryid", "count", "stepscomplete", "createdby", "paidouttotal"}
+_BETA_MARKS = {"totallabor", "totallaborhours", "labor", "attachments"}
+
+
+def layout_of(headers: List[str]) -> str:
+    """'classic', 'beta' or 'unknown', from the heading names alone (no row is looked at). Two or more
+    headings that only one list has are needed; otherwise it says 'unknown' rather than guess."""
+    names = {E.norm(h) for h in headers}
+    classic, beta = len(names & _CLASSIC_MARKS), len(names & _BETA_MARKS)
+    if classic >= 2 and classic > beta:
+        return "classic"
+    if beta >= 2 and beta > classic:
+        return "beta"
+    return "unknown"
+
+
+def header_row(rows: List[List[str]], aliases=None) -> Optional[List[str]]:
+    """The heading row of a DSS list (it need not be on line 1), or None if the file is not one."""
+    aliases = aliases or E.load_aliases()
+    for row in rows[:E.HEADER_SCAN_ROWS]:
+        found, _ = aliases.match(row)
+        if all(f in found for f in E.REQUIRED):
+            return row
+    return None

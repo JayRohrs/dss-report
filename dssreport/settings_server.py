@@ -30,6 +30,7 @@ from .state import load_state, save_state, seen_locations
 from . import licence as lic
 from .settings import Instance, Settings, load_settings, save_settings, unique_id, validate
 from . import dss_export_source
+from . import setup_wizard
 from .sources import build_source
 
 IDLE_SECONDS = 30 * 60
@@ -71,6 +72,9 @@ button.primary{background:var(--accent);color:var(--bg)}
 .msg.bad{background:var(--badbg);color:var(--bad);border:2px solid var(--bad)}
 .code{font-size:1.6rem;font-weight:800;letter-spacing:.08em}
 .state{font-weight:700}
+a.btn{display:inline-block;font-weight:700;min-height:52px;padding:12px 20px;border-radius:10px;border:2px solid var(--accent);
+color:var(--accent);text-decoration:none;margin:6px 10px 0 0}
+a.btn.primary{background:var(--accent);color:var(--bg)}
 """
 
 
@@ -148,6 +152,7 @@ class SettingsApp:
         self.device = None
         self.nonce = ""              # set by the server: lets the one small script on the page run
         self.available = []          # versions listed by the last "Check for updates now" (this session only)
+        self.wizard = setup_wizard.Wizard(self, CSS)
 
     @property
     def store(self) -> CredentialStore:
@@ -264,7 +269,8 @@ class SettingsApp:
                 enabled=on(f"inst_enabled_{i}"), source_kind=g(f"inst_kind_{i}", old_inst.source_kind) or old_inst.source_kind,
                 mapping_file=old_inst.mapping_file, credential_key=old_inst.credential_key,
                 include=_lines(g(f"inst_include_{i}")), hidden=hidden,
-                approval_words=_parse_words(g(f"inst_words_{i}")) if f"inst_words_{i}" in f else dict(old_inst.approval_words))
+                approval_words=_parse_words(g(f"inst_words_{i}")) if f"inst_words_{i}" in f else dict(old_inst.approval_words),
+                subdomain=old_inst.subdomain, source_path=old_inst.source_path, layout=old_inst.layout)
             pw = f.get(f"inst_pw_{i}", [""])[0]
             if pw:
                 if not inst.username:
@@ -746,6 +752,13 @@ class SettingsApp:
                f'<title>DSS report settings</title><style>{CSS}</style></head><body><main>',
                '<h1>Morning report settings</h1>',
                '<p class="lead">Tick what you want, then press Save. Nothing leaves this computer except what you switch on below.</p>']
+        if s.instances:
+            out.append(f'<p class="hint"><a href="/setup/connection?t={e(token)}">Run the guided setup again</a> '
+                       'to add another R365 in a few easy steps.</p>')
+        else:
+            out.append('<div class="card"><h3>New here?</h3><p>The guided setup takes about three minutes and asks '
+                       'one simple thing at a time.</p>'
+                       f'<a class="btn primary" href="/setup/connection?t={e(token)}">Start the guided setup</a></div>')
         for m in messages:
             out.append(f'<p class="msg ok">{e(m)}</p>')
         if problem:
@@ -871,8 +884,16 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         t = parse_qs(u.query).get("t", [""])[0]
-        if u.path not in ("/", "/report") or not self._ok_request(t):
+        is_setup = u.path == "/setup" or u.path.startswith("/setup/")
+        if (u.path not in ("/", "/report") and not is_setup) or not self._ok_request(t):
             return self._send(403, "<p>This page can only be opened from the program.</p>")
+        if is_setup:
+            try:
+                page = self.server.app.wizard.get(u.path, parse_qs(u.query), self.server.token)
+            except setup_wizard.NotFound:
+                return self._send(404, "<p>That page does not exist.</p>")
+            self.server.touch()
+            return self._send(200, page)
         if u.path == "/report":
             d = parse_qs(u.query).get("d", [""])[0] or None
             return self._send(200, self.server.app.render_view(self.server.token, folder=d))
@@ -881,10 +902,26 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         if n > (updates.MAX_TOTAL_BYTES + 100_000 if self.path == "/update" else
-                dss_export_source.MAX_FILE_BYTES + 200_000 if self.path == "/export" else 200_000):
+                dss_export_source.MAX_FILE_BYTES + 200_000 if self.path in ("/export", "/setup/connection") else 200_000):
             return self._send(413, "<p>Too much data.</p>")
         raw = self.rfile.read(n)
         app, messages, problem = self.server.app, [], ""
+        if self.path.startswith("/setup/"):
+            ctype = self.headers.get("Content-Type", "")
+            if "multipart/form-data" in ctype:
+                fields, files = _parse_multipart(ctype, raw)
+                filename = _upload_name(ctype, raw)
+            else:
+                fields = {k: v[0] for k, v in parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True).items() if v}
+                files, filename = {}, ""
+            if not self._ok_request(fields.get("t", "")):
+                return self._send(403, "<p>This page can only be used from the program.</p>")
+            try:
+                page = app.wizard.post(self.path, fields, files, filename, self.server.token)
+            except setup_wizard.NotFound:
+                return self._send(404, "<p>That page does not exist.</p>")
+            self.server.touch()
+            return self._send(200, page)
         if self.path == "/licence":
             fields, files = _parse_multipart(self.headers.get("Content-Type", ""), raw)
             if not self._ok_request(fields.get("t", "")):
@@ -1028,8 +1065,13 @@ class SettingsServer(HTTPServer):
         return self.url_for("/")
 
 
-def serve(open_browser: bool = True, app: Optional[SettingsApp] = None, path: str = "/") -> int:
+def serve(open_browser: bool = True, app: Optional[SettingsApp] = None, path: Optional[str] = None) -> int:
     server = SettingsServer(app or SettingsApp())
+    if path is None:                      # first run (no connection yet): start at the guided setup
+        try:
+            path = "/" if load_settings().instances else "/setup/connection"
+        except DssError:
+            path = "/"
     url = server.url_for(path)
     print(f"This is open in your browser. If not, open: {url}")
     print("Close this window or press Ctrl+C when you are done.")
