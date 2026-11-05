@@ -1,0 +1,7 @@
+ApprovalStatus,Status,Location,LocationNumber,Name,Date,NetSales,TotalDeposit,OverShort,GuestCount,StepsComplete,CreatedBy,CreatedOn,ModifiedBy,ModifiedOn,DailySalesSummaryId,PaidoutTotal,__count,NewFileName,Attachment,AttachmentLinkType,FileLink,LogEntries
+Unapproved,In Progress,Sample Pier Grill,101,Sample Pier Grill 03/08/2026,3/8/2026 12:00:00 AM,3000.0000,2910.0000,-23.5000,90,No,,2026-03-14T08:15:00.0000000Z,Sample User,2026-03-14T09:00:00.0000000Z,,0.0000,6,,,,,
+Unapproved,In Progress,Sample Pier Grill,101,Sample Pier Grill 03/09/2026,3/9/2026 12:00:00 AM,3000.0000,2910.0000,23.5000,90,No,,2026-03-14T08:15:00.0000000Z,Sample User,2026-03-14T09:00:00.0000000Z,,0.0000,6,,,,,
+Unapproved,In Progress,Sample Pier Grill,101,Sample Pier Grill 03/10/2026,3/10/2026 12:00:00 AM,3000.0000,2910.0000,(23.50),90,No,,2026-03-14T08:15:00.0000000Z,Sample User,2026-03-14T09:00:00.0000000Z,,0.0000,6,,,,,
+Unapproved,In Progress,Sample Pier Grill,101,Sample Pier Grill 03/11/2026,3/11/2026 12:00:00 AM,3000.0000,2910.0000,23.50-,90,No,,2026-03-14T08:15:00.0000000Z,Sample User,2026-03-14T09:00:00.0000000Z,,0.0000,6,,,,,
+Unapproved,In Progress,Sample Pier Grill,101,Sample Pier Grill 03/12/2026,3/12/2026 12:00:00 AM,3000.0000,2910.0000,0.0000,90,No,,2026-03-14T08:15:00.0000000Z,Sample User,2026-03-14T09:00:00.0000000Z,,0.0000,6,,,,,
+Unapproved,In Progress,Sample Pier Grill,101,Sample Pier Grill 03/13/2026,3/13/2026 12:00:00 AM,3000.0000,2910.0000,-0.0000,90,No,,2026-03-14T08:15:00.0000000Z,Sample User,2026-03-14T09:00:00.0000000Z,,0.0000,6,,,,,
