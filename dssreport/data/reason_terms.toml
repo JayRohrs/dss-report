@@ -28,3 +28,27 @@ conflict = "The file has two rows for this day that disagree"
 stale = "The file is not from today, so approval cannot be told"
 unclear_status = "Status is '{value}', which is not treated as approved or not"
 no_column = "No approval column in this file"
+
+# The deposit matcher's plain-words explanations (deposits.py). Each is one or two short sentences.
+# Placeholders: {place} {day} {expected} {amount} {date} {diff} {n} {lines} {days} {first} {last} {os}
+# The matcher only ever says what the two files show. It never says why money is missing.
+[deposits]
+matched = "The bank shows {amount} on {date}, the same as the {expected} the DSS expects for {day}."
+matched_weekend = "The bank shows {amount} on {date}, the same as the {expected} the DSS expects for {day}. Weekend takings usually reach the bank on the next business day."
+name_found = "The bank text names the place."
+name_missing = "The bank text does not name the place, so this rests on amount and date alone; no other place expects this amount."
+split = "No single bank line equals the {expected} expected for {day}, but {n} lines add up to it exactly: {lines}. That may be a split deposit; check it is one day's takings."
+two_days = "One bank line of {amount} on {date} equals the DSS deposits for {days} added together ({expected} for {day}). That may be one deposit covering both days."
+two_days_weekend = "One bank line of {amount} on {date} equals the DSS deposits for {days} added together. That looks like a weekend deposit made on the next business day, but only you can confirm it."
+near_miss = "The bank shows {amount} on {date}; the DSS expects {expected} for {day}, a difference of {diff}. Close, but not the same, so it is not matched."
+typo = "The bank shows {amount} on {date}; the DSS expects {expected} for {day}. The same digits in a different order, which can be a typing slip in one of the two figures. It is not matched."
+over_short_link = "The difference equals the Over/Short figure R365 shows for the day ({os})."
+over_short_unknown_sign = "Which sign of Over/Short means over or short is not confirmed, so this is a pointer, not an answer."
+missing = "No bank line of {expected} or anything close was found from {first} to {last}."
+no_match = "The bank has {n} line(s) naming this place in the {first} to {last} window, but none is the {expected} expected for {day}."
+bank_ends = "The bank file ends on {last}, before the window for {day} has closed, so the deposit may not have reached the bank yet. This cannot be told from these files."
+duplicate = "The same bank line ({amount} on {date}) appears {n} times. It may be a repeated line in the file or a real second deposit; the file alone cannot tell."
+ambiguous = "More than one place or day fits the bank line(s) of {amount} and nothing in the bank text says which. Nothing was matched."
+several_close = "{n} bank lines are close to the {expected} expected for {day} and nothing says which one is meant: {lines}."
+no_amount = "The DSS shows no readable deposit amount for {day}, so there is nothing to compare."
+conflict = "The DSS list has two rows for {day} with different deposit amounts, so it cannot be told which is right."

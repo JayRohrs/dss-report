@@ -135,4 +135,6 @@ See [SECURITY.md](SECURITY.md). **Never commit real data to this repository.** T
 
 ## For the person maintaining it
 
+Deposit matcher (expected deposits vs a bank export, explained in plain words): [docs/DEPOSIT_MATCHER.md](docs/DEPOSIT_MATCHER.md).
+
 Tests: `python -m unittest` (no extra software). Design notes: [docs/DEVELOPER_NOTES.md](docs/DEVELOPER_NOTES.md). Licence signing tool (kept out of the shipped program): `tools/`. Plans, not built: [docs/LOCAL_MODEL_PLAN.md](docs/LOCAL_MODEL_PLAN.md), [docs/MOBILE_PLAN.md](docs/MOBILE_PLAN.md).

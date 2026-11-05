@@ -57,6 +57,11 @@ def _parser():
     dm.add_argument("--story", action="store_true", help="print a short plain-words story of what each mess case shows")
     dm.add_argument("--out", help="folder to write the demo into (default: a new temp folder)")
     dm.add_argument("--no-open", action="store_true", help="do not open the result in the browser")
+    dd = sub.add_parser("demo-deposits", help="write made-up DSS and bank files to try the deposit matcher")
+    dd.add_argument("--out", required=True, help="folder to write into")
+    dp = sub.add_parser("deposits", help="match expected deposits to a bank export (reads files only; nothing is sent)")
+    dp.add_argument("--bank", help="bank export file or folder (default: the one set in settings)")
+    dp.add_argument("--dss", help="DSS list file or folder (default: the one set in settings)")
     demo = sub.add_parser("demo-data", help="write the made-up demo data as CSV and JSON files")
     demo.add_argument("--out", required=True, help="folder to write into")
     return p
@@ -220,6 +225,18 @@ def main(argv=None) -> int:
         if args.command == "demo-data":
             for path in write_demo_files(args.out):
                 print(f"Wrote {path}")
+            return 0
+        if args.command == "demo-deposits":
+            from .deposits_sample import write_samples
+            for path in write_samples(args.out):
+                print(f"Wrote {path}")
+            return 0
+        if args.command == "deposits":
+            from .deposits_run import deposits_dir, run_watched
+            from .settings import load_settings
+            s = load_settings()
+            print(run_watched(args.bank or s.deposit_bank_path, args.dss or s.deposit_dss_path, force=True))
+            print(f"The result is in {deposits_dir()}; open it from Settings > Deposit matcher.")
             return 0
         if args.command == "r365":
             return _r365(args)

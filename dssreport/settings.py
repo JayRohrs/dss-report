@@ -59,6 +59,8 @@ class Settings:
     schedule_time: str = "07:00"
     schedule_weekdays: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])  # Mon=0
     schedule_late_after_minutes: int = 90
+    deposit_bank_path: str = ""          # deposit matcher: a bank export file, or a folder to watch for the newest one
+    deposit_dss_path: str = ""           # deposit matcher: the DSS list file/folder (empty = the one a connection keeps)
     update_check_enabled: bool = False   # optional online update check: OFF unless ticked
     update_manifest_url: str = ""        # the owner's signed update list; no real address is built in
 
@@ -161,6 +163,9 @@ def validate(s: Settings) -> Settings:
                               "(no user name, no ? query, no # part).")
     if s.update_check_enabled and not s.update_manifest_url:
         raise ConfigError("To check for updates online, fill in the update address.")
+    for p in (s.deposit_bank_path, s.deposit_dss_path):
+        if len(p) > 500 or "\0" in p:
+            raise ConfigError("A deposit matcher file or folder location is not usable.")
     if s.schedule_late_after_minutes < 0:
         raise ConfigError("'Late after' minutes cannot be negative.")
     return s
