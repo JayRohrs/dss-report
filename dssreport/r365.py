@@ -322,3 +322,6 @@ def describe_metadata(xml: bytes) -> List[str]:
         for pname, ptype in types.get(etype, []):
             lines.append(f"    {pname}  ({ptype})")
     return lines or ["(no entity sets found)"]
+
+
+from . import r365_readonly  # noqa: E402,F401  (registers the "r365-readonly" connector)

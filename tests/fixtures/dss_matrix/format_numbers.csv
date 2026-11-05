@@ -1,0 +1,8 @@
+﻿Status,Location,Date,Attachments,Net Sales,Total Labor $,Total Labor Hours,Labor %,Total Deposit,Over/Short,Guest Count
+In Progress,Sample Pier Grill,03/07/2026,No,3000.0000,0.0000,0.0000000000,0,2910.0000,$23.50,50
+In Progress,Sample Pier Grill,03/08/2026,No,3000.0000,0.0000,0.0000000000,0,2910.0000,(23.50),50
+In Progress,Sample Pier Grill,03/09/2026,No,3000.0000,0.0000,0.0000000000,0,2910.0000,23.50-,50
+In Progress,Sample Pier Grill,03/10/2026,No,3000.0000,0.0000,0.0000000000,0,2910.0000,−23.50,50
+In Progress,Sample Pier Grill,03/11/2026,No,3000.0000,0.0000,0.0000000000,0,2910.0000,"1,234.50",50
+In Progress,Sample Pier Grill,03/12/2026,No,3000.0000,0.0000,0.0000000000,0,2910.0000,-,50
+In Progress,Sample Pier Grill,03/13/2026,No,3000.0000,0.0000,0.0000000000,0,2910.0000,n/a,50

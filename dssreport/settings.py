@@ -31,6 +31,10 @@ class Instance:
     hidden: List[str] = field(default_factory=list)    # locations switched off
     # DSS export only: extra meanings for status words, e.g. {"in progress": "not approved"}. Empty = off.
     approval_words: Dict[str, str] = field(default_factory=dict)
+    # Set by the guided setup (DSS export only). No password or address is ever kept here.
+    subdomain: str = ""              # the first part of the R365 web address; a label only
+    source_path: str = ""            # a DSS list file, or a folder to take the newest list file from
+    layout: str = ""                 # "classic", "beta", or "" when it could not be told
 
     def __post_init__(self):
         if not self.mapping_file:
@@ -128,6 +132,12 @@ def validate(s: Settings) -> Settings:
         if i.enabled and i.source_kind == "odata" and not (i.base_url and i.username):
             raise ConfigError(f"Connection '{i.name}': fill in the address and the user name, or untick Connect.")
         _check_approval_words(i)
+        if i.layout not in ("", "classic", "beta"):
+            raise ConfigError(f"Connection '{i.name}': the layout must be classic or beta.")
+        if i.subdomain and not re.fullmatch(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", i.subdomain):
+            raise ConfigError(f"Connection '{i.name}': the R365 subdomain may only hold small letters, digits and dashes.")
+        if len(i.source_path) > 500 or "\0" in i.source_path:
+            raise ConfigError(f"Connection '{i.name}': the file or folder location is not usable.")
         if ".." in Path(i.mapping_file).parts or Path(i.mapping_file).is_absolute():
             raise ConfigError(f"Connection '{i.name}': the mapping file must be inside the program's own folder.")
     if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", s.schedule_time):

@@ -13,9 +13,9 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .dss_export import (ExportError, FIELD_WORDS, MAX_FILE_BYTES, ParsedExport, SheetStats, load_aliases,
+from .dss_export import (ALLOWED_EXTENSIONS, ExportError, FIELD_WORDS, MAX_FILE_BYTES, ParsedExport, SheetStats, load_aliases,
                          parse_export, read_rows)
-from .errors import InputError
+from .errors import DssError, InputError
 from .model import DayRecord
 from .paths import app_dir
 from .settings import Instance
@@ -79,6 +79,73 @@ def store_export(instance: Instance, filename: str, data: bytes, file_mtime: Opt
     return meta
 
 
+def find_dss_file(location: str, tries: int = 10) -> tuple:
+    """(path, headings) of the DSS list to read from a file or a folder the person typed.
+
+    A folder: the newest .csv/.tsv/.xlsx/.txt files in it are looked at (newest first, at most `tries`) and the
+    first that really is a DSS list is used, so a Downloads folder full of other files is fine. Read-only.
+    Raises ExportError in plain words that say what to do."""
+    from .dss_inspect import header_row
+    text = (location or "").strip().strip('"')
+    if not text:
+        raise ExportError("Type where the Daily Sales Summary list is: a file, or the folder you download it into.")
+    try:
+        path = Path(text).expanduser()
+        exists, is_dir = path.exists(), path.is_dir()
+    except (OSError, ValueError):
+        raise ExportError("That location cannot be used. Copy it from File Explorer (right-click the file or folder, "
+                          "then Copy as path) and paste it here.")
+    if not exists:
+        raise ExportError("That file or folder was not found on this computer. Check the spelling, or copy it from "
+                          "File Explorer (right-click, then Copy as path) and paste it here.")
+    if is_dir:
+        try:
+            files = [p for p in path.iterdir() if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS]
+            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        except OSError:
+            raise ExportError("That folder could not be opened. Choose a folder you can open in File Explorer.")
+        if not files:
+            raise ExportError("That folder has no .csv, .xlsx or .tsv files. Download the Daily Sales Summary list "
+                              "from R365 into it first, then try again.")
+        candidates = files[:tries]
+    else:
+        candidates = [path]
+    for p in candidates:
+        try:
+            if p.stat().st_size > MAX_FILE_BYTES:
+                continue
+            rows, _, _ = read_rows(p.read_bytes(), p.name)
+        except (OSError, ExportError):
+            continue
+        head = header_row(rows)
+        if head is not None:
+            return p, head
+    if not is_dir:
+        raise ExportError("That file does not look like a Daily Sales Summary list (no Location and Date headings "
+                          "were found). Download the list again from R365 and choose that file.")
+    raise ExportError(f"None of the {len(candidates)} newest files in that folder looks like a Daily Sales Summary "
+                      "list. Download the list from R365 into this folder, then try again.")
+
+
+def refresh_from_source_path(instance: Instance) -> None:
+    """If the connection points at a file or folder, keep our copy in step with the newest list there.
+    Never raises: if the file cannot be found or read, the earlier copy is used and the report's own
+    "this file is old" wording tells the person."""
+    if not getattr(instance, "source_path", ""):
+        return
+    try:
+        path, _ = find_dss_file(instance.source_path)
+        mtime = path.stat().st_mtime
+        meta = stored_info(instance.id)
+        if meta and meta.get("original_name") == safe_name(path.name) and meta.get("file_mtime"):
+            if abs(datetime.fromisoformat(meta["file_mtime"]).timestamp() - mtime) < 1:
+                return
+        store_export(instance, path.name, path.read_bytes(), mtime,
+                     expected_total=(meta or {}).get("expected_total"))
+    except (DssError, OSError, ValueError):
+        return
+
+
 def _words_seen(rows) -> dict:
     """How many rows have each approval/status word (words only: no place, amount or id)."""
     aliases = load_aliases()
@@ -137,6 +204,7 @@ class DssExportSource(DataSource):
         self.window = (start, end)
 
     def _read(self) -> ParsedExport:
+        refresh_from_source_path(self.instance)
         meta = stored_info(self.instance.id)
         if meta is None:
             raise InputError("No DSS export file has been chosen for this connection yet. Open settings, go to "

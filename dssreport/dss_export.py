@@ -367,6 +367,9 @@ def read_rows(data: bytes, filename: str) -> Tuple[List[List[str]], SheetStats, 
 
 # ------------------------------------------------------------------------------------------ cell values
 
+_THOUSANDS = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?")
+
+
 def parse_money(text: str) -> Tuple[Optional[Decimal], bool]:
     """(value, unreadable). Blank is (None, False). Text that is not a number is (None, True): never guessed."""
     t = (text or "").strip().replace("−", "-").replace(" ", " ")
@@ -375,11 +378,17 @@ def parse_money(text: str) -> Tuple[Optional[Decimal], bool]:
     neg = False
     if t.startswith("(") and t.endswith(")"):
         neg, t = True, t[1:-1]
-    t = t.replace("$", "").replace(",", "").replace(" ", "")
+    t = t.replace("$", "").replace(" ", "")
     if t.endswith("-"):
         neg, t = True, t[:-1]
     if t.startswith("+"):
         t = t[1:]
+    if "," in t:
+        # A comma is only read as a thousands mark when the digits are grouped that way (1,234.50). Anything else
+        # (23,50  -23,50  1.234,50) might be a decimal comma, so it is not guessed: unreadable -> UNKNOWN.
+        if not _THOUSANDS.fullmatch(t.lstrip("-")):
+            return None, True
+        t = t.replace(",", "")
     try:
         d = Decimal(t)
     except InvalidOperation:
@@ -572,7 +581,7 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
         warnings.append(date_warn)
 
     # ---- read each data row
-    bad_over = bad_sales = 0
+    bad_over = bad_sales = comma_cells = 0
     by_day: Dict[Tuple[str, date], List[dict]] = {}
     for row in data_rows:
         d = parse_date(cell(row, "business_date"), order)
@@ -581,8 +590,10 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
             continue
         over, bad = parse_money(cell(row, "over_short")) if "over_short" in cols else (None, False)
         bad_over += bad
+        comma_cells += bool(bad and "," in cell(row, "over_short"))
         sales, bad2 = parse_money(cell(row, "net_sales")) if "net_sales" in cols else (None, False)
         bad_sales += bad2
+        comma_cells += bool(bad2 and "," in cell(row, "net_sales"))
         loc = re.sub(r"\s+", " ", cell(row, "location"))
         by_day.setdefault((loc, d), []).append(
             {"word": cell(row, "approval_status"), "over": over, "sales": sales})
@@ -689,6 +700,10 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
     if bad_sales:
         warnings.append(f"{bad_sales} Net Sales value{'s' if bad_sales != 1 else ''} could not be read as a number "
                         f"and {'are' if bad_sales != 1 else 'is'} shown as blank.")
+    if comma_cells:
+        warnings.append(f"{comma_cells} amount{'s' if comma_cells != 1 else ''} used a comma that may be a decimal mark "
+                        "(for example 23,50). They were not guessed: they are shown as UNKNOWN. Check how R365 wrote "
+                        "them before relying on this file.")
     if conflict_days:
         warnings.append(f"{conflict_days} day{'s' if conflict_days != 1 else ''} had rows that disagree with each "
                         "other. Those are shown as UNKNOWN and marked as a conflict.")

@@ -70,6 +70,10 @@ Open `out/report.html` in your browser (and `out/email.txt` for the plain-text e
 
 [On a desktop](docs/screenshots/demo-brief-1500px.png), [if one file were old](docs/screenshots/demo-brief-old-file-375px.png).
 
+## The guided setup (first run)
+
+The first time you open settings with no connection yet, it starts at a five-screen guide: **1** add your R365 (name, the start of your web address, where the downloaded Daily Sales Summary list is, which layout - or "not sure, find out for me"), **2** tick the locations found in that file (unticked ones go on the hide list), **3** choose when the report is built and whether to prepare an email (email is off), **4** look at the report (the made-up demo, or your own file), **5** a done page that says what happens next and has an **Undo this setup** button. It asks for no password and changes nothing in R365. Details: [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md).
+
 ## The settings screen
 
 Open it with the desktop shortcut or `python -m dssreport settings`. It is a page in your browser that only your own computer can reach. Every setting has a one-line explanation:

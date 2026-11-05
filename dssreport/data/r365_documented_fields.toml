@@ -1,0 +1,36 @@
+# Field names for the read-only Restaurant365 connector (kind "r365-readonly"),
+# taken ONLY from R365's public documentation:
+#   https://docs.restaurant365.com/docs/restaurant365-odata-connector
+#   https://docs.restaurant365.com/docs/r365-api-connector
+#
+# A name is filled in here only once a person has read it on a public R365 page and
+# written the page address in "source_doc" next to it. An empty value means UNKNOWN:
+# the connector returns None for it, the matching check shows "needs mapping", and the
+# gap is listed in docs/R365_FIELD_GAPS.md. Never fill a name in from memory, from a
+# third-party site, or from a real tenant's $metadata.
+#
+# Status when this file was written: the build session could not open docs.restaurant365.com
+# (its network blocks that host), so NOTHING below is confirmed. Every entry is empty.
+version = 1
+
+[source]
+entity = ""            # entity set with one row per location per business day
+location = ""
+business_date = ""
+date_literal = "date"
+
+[fields]
+sales_total = ""
+cash_over_short = ""
+missing_receipts = ""
+payment_exceptions = ""
+approved = ""
+pos_import_received = ""
+
+[values]
+approved_true = []
+approved_false = []
+pos_import_received_true = []
+pos_import_received_false = []
+
+[payments]
