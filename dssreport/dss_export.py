@@ -660,6 +660,11 @@ def parse_export(rows: List[List[str]], aliases: Aliases, approval_words: Option
         if f == "stated_count":
             continue                                  # a missing count column is covered by the sentence about totals
         warnings.append(f"This file has no {FIELD_WORDS[f]} column{why}.")
+    if unrecognised and {"approval_status", "over_short", "net_sales"} & set(missing):
+        # R365 may have renamed a heading: name the ones we did not recognise so a one-line addition can fix it
+        shown = ", ".join(f"'{h}'" for h in unrecognised[:10]) + (" and more" if len(unrecognised) > 10 else "")
+        warnings.append(f"Headings this program did not recognise: {shown}. If one of them is the missing column, "
+                        "add its name to the heading list (dss_export_aliases.toml) and it will be read.")
     # the classic export carries its own row count in a column; the screen's total can be typed in by the user
     counts = {cell(r, "stated_count") for r in data_rows} - {""} if "stated_count" in cols else set()
     count_values = set()

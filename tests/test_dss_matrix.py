@@ -288,9 +288,9 @@ class Q9NotInTheExport(I.Env):
         beta_default = self.brief("pair_beta_lines_up.csv")
         beta_set = self.brief("pair_beta_lines_up.csv", {"In Progress": "not approved"})
         self.assertIn("2 unapproved", classic)
-        self.assertIn("Sample Hill Bistro  Needs to balance: Over/Short -$23.50", classic)
-        self.assertIn("no place shows as unapproved", beta_default)
-        self.assertIn("Could not tell:", beta_default)
+        self.assertIn("* Sample Hill Bistro\n    Needs to balance: Over/Short -$23.50", classic)
+        self.assertIn("No place shows as unapproved.", beta_default)
+        self.assertIn("COULD NOT TELL (the report will not guess)", beta_default)
         self.assertIn("2 unapproved", beta_set)
         for text in (classic, beta_default, beta_set):
             self.assertIn("Nothing was approved or sent.", text)

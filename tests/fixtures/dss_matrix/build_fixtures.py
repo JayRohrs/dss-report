@@ -16,6 +16,18 @@ sys.path.insert(0, str(HERE.parent.parent.parent))
 
 from dssreport.dss_export_sample import BETA_HEADERS, CLASSIC_HEADERS, xlsx_bytes   # noqa: E402
 
+
+def _xlsx_unix(rows):
+    """xlsx_bytes, but with the zip 'version made by' high byte set to 3 (Unix), as in the committed
+    fixtures. zipfile writes 0 (MS-DOS) on Windows, which made the byte-for-byte check fail there."""
+    data = bytearray(xlsx_bytes(rows))
+    sig = b"PK\x01\x02"  # central directory file header
+    i = data.find(sig)
+    while i != -1:
+        data[i + 5] = 3
+        i = data.find(sig, i + 4)
+    return bytes(data)
+
 PLACES = [("Sample Pier Grill", "101"), ("Sample Hill Bistro", "102"), ("Sample Dock Cafe", "103"),
           ("Sample Park Diner", "104"), ("Sample Mill Tavern", "105")]
 DAY = (2026, 3, 13)
@@ -172,10 +184,10 @@ def build() -> dict:
     from datetime import date
     typed = [classic[0]] + [r[:5] + [date(*DAY)] + [float(r[6]), float(r[7]), float(r[8])] + [90, r[10]] + r[11:]
                             for r in classic[1:]]
-    f["variant_classic_typed_cells.xlsx"] = xlsx_bytes(typed)
-    f["variant_beta_text_cells.xlsx"] = xlsx_bytes(pair_beta(["Approved", "In Progress", "Approved", "In Progress",
+    f["variant_classic_typed_cells.xlsx"] = _xlsx_unix(typed)
+    f["variant_beta_text_cells.xlsx"] = _xlsx_unix(pair_beta(["Approved", "In Progress", "Approved", "In Progress",
                                                               "Approved"]))
-    f["variant_beta_title_and_footer.xlsx"] = xlsx_bytes(
+    f["variant_beta_title_and_footer.xlsx"] = _xlsx_unix(
         [["Daily Sales Summary", "", ""], ["Sample Group A", "", ""], [""]] +
         pair_beta(["Approved", "In Progress", "Approved", "In Progress", "Approved"]) + [["Total Records: 5"]])
     return f
