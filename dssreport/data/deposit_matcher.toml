@@ -1,0 +1,40 @@
+# Deposit matcher: the things this program ASSUMES because they are not confirmed yet.
+# Every value here is shown on the Deposit matcher screen as an assumption. Nothing below is a fact about
+# your bank or R365 until you have checked it against a known day.
+#
+# To change one, put a file called deposit_matcher.toml in your DssReport folder (%LOCALAPPDATA%\DssReport)
+# with just the lines you want to change. It is read on top of this one and survives updates.
+
+version = 1
+
+[assumptions]
+# UNKNOWN: whether a positive Over/Short means cash over or cash short in the DSS export.
+# "unknown" (default) | "positive_is_over" | "negative_is_over". Only used to word a pointer; never to move money.
+over_short_sign = "unknown"
+
+# ASSUMED: the DSS "Total Deposit" is the amount that should reach the bank for that place and business day.
+# (Nothing here checks that. Check one known day against the bank before trusting a "matched".)
+
+# ASSUMED: a bank deposit posts from 0 up to this many days after the business day.
+window_days_before = 0
+window_days_after = 3
+
+# ASSUMED: differences up to this many dollars are shown as a "near miss" (never matched).
+near_miss_max = "5.00"
+
+# ASSUMED: a deposit may be split over at most this many bank lines, and one bank line may cover at most
+# this many consecutive business days.
+max_split_lines = 3
+max_days_per_deposit = 3
+
+# UNKNOWN: bank amounts use "." as the decimal mark ("1,234.50"). Set true only if your bank file writes
+# "1.234,50" or "23,50". While false, an amount like 23,50 is NOT read (never guessed) and is listed.
+bank_decimal_comma = false
+
+# ASSUMED: in a bank file with one Amount column, positive amounts are money coming in. Negative lines are
+# ignored. (A file with Debit and Credit columns uses the Credit column.)
+
+# Words in the bank text that point to a place (in addition to the place's own name and number).
+# [places]
+# "Sample Pier Grill" = ["PIER GRILL", "PIER 101"]
+[places]

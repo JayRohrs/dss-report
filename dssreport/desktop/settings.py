@@ -30,6 +30,8 @@ class DesktopSettings:
     graph_client_id: str = ""            # public app id, not a secret
     graph_tenant: str = "organizations"
     open_report_after_run: bool = False
+    deposit_bank_path: str = ""          # deposit matcher: a bank export file, or a folder to watch for the newest one
+    deposit_dss_path: str = ""           # deposit matcher: the DSS list file/folder (empty = the one a connection keeps)
 
 
 def validate(s: DesktopSettings) -> DesktopSettings:

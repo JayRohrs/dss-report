@@ -31,6 +31,7 @@ from . import licence as lic
 from .settings import Instance, Settings, load_settings, save_settings, unique_id, validate
 from . import dss_export_source
 from . import setup_wizard
+from . import deposits, deposits_page, deposits_run
 from .sources import build_source
 
 IDLE_SECONDS = 30 * 60
@@ -217,7 +218,9 @@ class SettingsApp:
             email_enabled=on("email_enabled"), email_to=g("email_to"), email_send_auto=on("email_send_auto"),
             graph_client_id=g("graph_client_id"), graph_tenant=g("graph_tenant", "organizations") or "organizations",
             schedule_enabled=on("schedule_enabled"), schedule_time=g("schedule_time", "07:00"),
-            schedule_weekdays=days, schedule_late_after_minutes=old_settings.schedule_late_after_minutes)
+            schedule_weekdays=days, schedule_late_after_minutes=old_settings.schedule_late_after_minutes,
+            deposit_bank_path=g("deposit_bank_path"), deposit_dss_path=g("deposit_dss_path"),
+            update_check_enabled=old_settings.update_check_enabled, update_manifest_url=old_settings.update_manifest_url)
         validate(s)
         if s.email_enabled and not old_settings.email_enabled:
             status.require(lic.F_EMAIL)
@@ -513,6 +516,74 @@ class SettingsApp:
                 '<meta name="viewport" content="width=device-width, initial-scale=1">'
                 f'<title>View the report</title><style>{CSS}{VIEW_CSS}</style></head><body><main>'
                 + "".join(tools) + '</main></body></html>')
+
+    # ---------------- the deposit matcher screen
+    draft_mailer_factory = None          # tests put a fake here; otherwise the desktop draft-only mailer is used
+
+    def deposits_action(self, f: dict, files: dict, filenames: dict):
+        """Returns (messages, note_key). Raises DssError (plain words) when the person must fix something."""
+        g = lambda k: (f.get(k, [""])[0] if isinstance(f.get(k), list) else f.get(k, "")).strip()
+        do, s, msgs = g("do"), load_settings(), []
+        if do == "watched":
+            if not s.deposit_bank_path:
+                raise DssError("No bank file or folder is set. Choose one in Settings, section 9.")
+            return [deposits_run.run_watched(s.deposit_bank_path, s.deposit_dss_path, force=True)], ""
+        if do == "upload":
+            if not files.get("bank"):
+                raise DssError("Choose the bank file first.")
+            if files.get("dss"):
+                dss_bytes, dss_name = files["dss"], filenames.get("dss") or "dss.csv"
+            else:
+                path = (deposits_run.newest_file(s.deposit_dss_path, (".csv", ".tsv", ".txt", ".xlsx"))
+                        if s.deposit_dss_path.strip() else deposits_run.default_dss_file())
+                if path is None:
+                    raise DssError("Also choose the DSS list (the Daily Sales Summary export), or set where it is in Settings, section 9.")
+                dss_bytes, dss_name = path.read_bytes(), path.name
+            chk = deposits_run.check_files(files["bank"], filenames.get("bank") or "bank.csv", dss_bytes, dss_name)
+            return [deposits.summary_line(chk.result)], ""
+        if do == "sample":
+            from . import deposits_sample as smp
+            chk = deposits_run.check_files(smp.bank_csv().encode(), "sample-bank.csv", smp.dss_csv().encode(), "sample-dss.csv")
+            return ["Made-up sample files checked. " + deposits.summary_line(chk.result)], ""
+        chk = deposits_run.load_latest()
+        item = next((i for i in chk.result.items if i.key == g("key")), None) if chk else None
+        if item is None:
+            raise DssError("That line is no longer in the latest check. Check the files again.")
+        if do in ("ok", "flag", "clear"):
+            deposits_run.mark(item.key, do)
+            return [{"ok": "Marked as looks right.", "flag": "Flagged.", "clear": "Your mark was removed."}[do]], ""
+        if do == "note":
+            return ["Here is a note you can copy. Nothing has been sent."], item.key
+        if do == "draft":
+            from .desktop import daily, settings as dst
+            ds = dst.load()
+            if not ds.draft_to or not ds.graph_client_id:
+                raise DssError("To put the note in Microsoft 365 as a draft, fill in the draft address and app ID "
+                               "(dss-report set draft_to / graph_client_id). You can copy the note text instead.")
+            subject, body = deposits.draft_note(item, chk.result)
+            mailer = (self.draft_mailer_factory or daily.default_mailer)(ds)
+            mailer.create_draft(ds.draft_to, subject, body, "deposit-note.txt", body.encode("utf-8"), "text/plain")
+            return [f"A draft is waiting in your Microsoft 365 Drafts folder for {ds.draft_to}. It was not sent."], item.key
+        raise DssError("That button is not known.")
+
+    def render_deposits(self, token: str, messages=(), problem: str = "", note_key: str = "") -> str:
+        chk = deposits_run.load_latest()
+        s = load_settings()
+        note_html = ""
+        if chk and note_key:
+            item = next((i for i in chk.result.items if i.key == note_key), None)
+            if item:
+                subject, body = deposits.draft_note(item, chk.result)
+                e = escape
+                note_html = (f'<b>{e(subject)}</b><textarea readonly rows="11">{e(body)}</textarea>'
+                             f'<form method="post" action="/deposits"><input type="hidden" name="t" value="{e(token)}">'
+                             f'<input type="hidden" name="key" value="{e(item.key)}">'
+                             '<button type="submit" name="do" value="draft">Create a Microsoft 365 draft</button></form>'
+                             '<span class="small">Select the text and copy it, or make a draft. Either way you read it and send it yourself; '
+                             'this program never sends.</span>')
+        return deposits_page.render(chk, deposits_run.reviews(), token, messages, problem, note_key, note_html,
+                                    s.deposit_bank_path, s.deposit_dss_path, deposits_run.last_error(), CSS,
+                                    deposits.load_assumptions().lines())
 
     # ---------------- licence and connections sections
     def _licence_html(self, status, s: Settings, token: str) -> list:
@@ -829,6 +900,15 @@ class SettingsApp:
         out.append(_field("ai_model", c.ai_model, "Model name", "The name of the model your local server has."))
         out.append('</fieldset>')
 
+        out.append('<fieldset><legend>9. Deposit matcher</legend>')
+        out.append(_field("deposit_bank_path", s.deposit_bank_path, "Bank export file or folder to watch",
+                          "A file, or a folder your bank exports land in (the newest .csv or .ofx is used). When a NEW bank file "
+                          "appears, the automatic schedule above checks it for you. Leave empty to switch this off.",
+                          placeholder="C:\\Users\\you\\Downloads\\bank"))
+        out.append(_field("deposit_dss_path", s.deposit_dss_path, "DSS list file or folder (optional)",
+                          "The Daily Sales Summary export with Total Deposit. Empty = the one your DSS export connection keeps."))
+        out.append(f'<a class="btn" href="/deposits?t={e(token)}">Open the deposit matcher</a></fieldset>')
+
         out.append('<button class="primary" type="submit" name="action" value="save">Save settings</button>'
                    '<button type="submit" name="action" value="quit">Save and close</button></form>')
         out.append(f'<p class="hint">Settings file: {e(str(paths.settings_path()))}<br>Rules file: {e(str(self.rules_path))}</p>')
@@ -885,7 +965,7 @@ class _Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         t = parse_qs(u.query).get("t", [""])[0]
         is_setup = u.path == "/setup" or u.path.startswith("/setup/")
-        if (u.path not in ("/", "/report") and not is_setup) or not self._ok_request(t):
+        if (u.path not in ("/", "/report", "/deposits") and not is_setup) or not self._ok_request(t):
             return self._send(403, "<p>This page can only be opened from the program.</p>")
         if is_setup:
             try:
@@ -894,6 +974,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(404, "<p>That page does not exist.</p>")
             self.server.touch()
             return self._send(200, page)
+        if u.path == "/deposits":
+            return self._send(200, self.server.app.render_deposits(self.server.token))
         if u.path == "/report":
             d = parse_qs(u.query).get("d", [""])[0] or None
             return self._send(200, self.server.app.render_view(self.server.token, folder=d))
@@ -902,7 +984,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         if n > (updates.MAX_TOTAL_BYTES + 100_000 if self.path == "/update" else
-                dss_export_source.MAX_FILE_BYTES + 200_000 if self.path in ("/export", "/setup/connection") else 200_000):
+                dss_export_source.MAX_FILE_BYTES + 200_000 if self.path in ("/export", "/setup/connection", "/deposits") else 200_000):
             return self._send(413, "<p>Too much data.</p>")
         raw = self.rfile.read(n)
         app, messages, problem = self.server.app, [], ""
@@ -922,6 +1004,24 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(404, "<p>That page does not exist.</p>")
             self.server.touch()
             return self._send(200, page)
+        if self.path == "/deposits":
+            ctype = self.headers.get("Content-Type", "")
+            if "multipart/form-data" in ctype:
+                fields, files = _parse_multipart(ctype, raw)
+                names = _upload_names(ctype, raw)
+            else:
+                fields = {k: v[0] for k, v in parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True).items() if v}
+                files, names = {}, {}
+            if not self._ok_request(fields.get("t", "")):
+                return self._send(403, "<p>This page can only be used from the program.</p>")
+            note_key = ""
+            try:
+                messages, note_key = app.deposits_action(fields, files, names)
+            except DssError as exc:
+                problem = str(exc)
+                note_key = fields.get("key", "") if fields.get("do") == "draft" else ""
+            self.server.touch()
+            return self._send(200, app.render_deposits(self.server.token, messages, problem, note_key))
         if self.path == "/licence":
             fields, files = _parse_multipart(self.headers.get("Content-Type", ""), raw)
             if not self._ok_request(fields.get("t", "")):
@@ -1018,6 +1118,15 @@ def _upload_name(content_type: str, body: bytes) -> str:
         if part.get_filename() is not None:
             return part.get_filename() or ""
     return ""
+
+
+def _upload_names(content_type: str, body: bytes) -> dict:
+    """field name -> the file name the browser sent, for every uploaded file."""
+    from email.parser import BytesParser
+    from email.policy import default
+    msg = BytesParser(policy=default).parsebytes(b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + body)
+    return {part.get_param("name", header="content-disposition"): part.get_filename() or ""
+            for part in (msg.iter_parts() if msg.is_multipart() else []) if part.get_filename() is not None}
 
 
 def _parse_multipart(content_type: str, body: bytes):

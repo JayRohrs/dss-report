@@ -56,6 +56,9 @@ def daily_run(s: DesktopSettings, now: Optional[datetime] = None, manual: bool =
     if not manual and not s.daily_run_enabled:
         log("skipped: the daily run is switched off", now)
         return 0
+    if s.deposit_bank_path.strip():
+        from ..deposits_run import scheduled_step
+        scheduled_step(s.deposit_bank_path, s.deposit_dss_path, log, now)   # a new bank file is matched; never blocks the report
     day: date = now.date() - timedelta(days=1)
     state = _state()
     if not manual and state.get("last_report_day") == day.isoformat():

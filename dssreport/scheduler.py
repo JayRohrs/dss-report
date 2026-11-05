@@ -85,8 +85,13 @@ def scheduled_run(settings: Settings, now: Optional[datetime] = None, input_spec
         return "The automatic schedule is not included in your licence, so nothing was run. " + lic.current_status().message
     state = load_state()
     d = decide(now, settings, state)
+    deposit_note = ""
+    if settings.schedule_enabled and settings.deposit_bank_path.strip():
+        from .deposits_run import scheduled_step
+        deposit_note = scheduled_step(settings.deposit_bank_path, settings.deposit_dss_path, log, now)
+        deposit_note = f" {deposit_note}" if deposit_note else ""
     if not d.run:
-        return d.reason
+        return d.reason + deposit_note
     day = report_day(now)
     try:
         result = run(input_spec, reports_dir() / day.isoformat(), end=day, days=1,

@@ -1,0 +1,16 @@
+Location,Location Number,Date,Net Sales,Total Deposit,Over/Short,Approval Status
+Sample Pier Grill,101,03/10/2026,3000.00,2910.00,0.00,Unapproved
+Sample Hill Bistro,102,03/10/2026,3000.00,1840.50,0.00,Unapproved
+Sample Hill Bistro,102,03/11/2026,3000.00,625.00,0.00,Unapproved
+Sample Park Cafe,103,03/10/2026,3000.00,1200.00,0.00,Unapproved
+Sample Dock Kitchen,104,03/13/2026,3000.00,2000.00,0.00,Unapproved
+Sample Dock Kitchen,104,03/14/2026,3000.00,1500.00,0.00,Unapproved
+Sample Mill Tavern,105,03/10/2026,3000.00,1000.00,-5.00,Unapproved
+Sample Lake Deli,106,03/10/2026,3000.00,1234.56,0.00,Unapproved
+Sample Lake Deli,106,03/11/2026,3000.00,"1234,50",0.00,Unapproved
+Sample Row Diner,107,03/10/2026,3000.00,800.00,0.00,Unapproved
+Sample Pier Grill,101,03/12/2026,3000.00,500.00,0.00,Unapproved
+Sample Park Cafe,103,03/12/2026,3000.00,500.00,0.00,Unapproved
+Sample Pier Grill,101,03/15/2026,3000.00,3100.00,0.00,Unapproved
+Sample Pier Grill,101,03/09/2026,3000.00,0.00,0.00,Unapproved
+Sample Pier Grill,101,03/13/2026,3000.00,700.00,0.00,Unapproved
